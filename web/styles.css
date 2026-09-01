@@ -5,6 +5,7 @@
   --cat-scale: 80;        /* cat emoji size */
   --mark-scale: 80;       /* X mark bounding box (diagonal reach) */
   --mark-thickness: 16;   /* X mark stroke thickness */
+  --hypo-scale: 68;       /* hypothesis triangle size */
 }
 
 * { box-sizing: border-box; }
@@ -73,20 +74,24 @@ h2 {
 }
 
 /* Completed level indicator */
-#level-buttons button.done {
-  background: #1b3a22;
-  color: #81c995;
-  position: relative;
-}
+#level-buttons button.done { position: relative; }
 
-#level-buttons button.done::after {
-  content: "✓";
+#level-buttons button[data-stars="3"] { background: #1b3a22; color: #81c995; }
+#level-buttons button[data-stars="1"],
+#level-buttons button[data-stars="2"] { background: #372800; color: #f5c518; }
+
+#level-buttons button[data-stars]::after {
   position: absolute;
-  bottom: 3px;
-  right: 5px;
-  font-size: 0.5rem;
-  opacity: 0.85;
+  bottom: 2px;
+  right: 3px;
+  font-size: 0.42rem;
+  line-height: 1;
+  letter-spacing: -0.5px;
+  opacity: 0.9;
 }
+#level-buttons button[data-stars="1"]::after { content: "★"; }
+#level-buttons button[data-stars="2"]::after { content: "★★"; }
+#level-buttons button[data-stars="3"]::after { content: "★★★"; }
 
 /* Tool-toggle buttons in the second toolbar row */
 .game-toolbar button.tool-toggle {
@@ -176,6 +181,13 @@ h2 {
   line-height: 1;
 }
 
+.cell .hypo-icon {
+  display: none;
+  font-size: calc(var(--hypo-scale) * 1cqw);
+  line-height: 1;
+  color: rgba(32, 33, 36, 0.65);
+}
+
 .cell .mark {
   display: none;
   position: relative;
@@ -198,6 +210,7 @@ h2 {
 
 .cell[data-state="1"] .mark { display: block; }
 .cell[data-state="2"] .cat-icon { display: block; }
+.cell[data-state="3"] .hypo-icon { display: block; }
 
 .cell:hover::after,
 .cell.active::after,

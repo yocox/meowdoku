@@ -15,7 +15,7 @@ const REGION_COLORS = [
   "#C71370",  // pink
 ];
 
-const EMPTY = 0, MARK = 1, CAT = 2;
+const EMPTY = 0, MARK = 1, CAT = 2, HYPO = 3;
 const HEARTS_MAX = 3;
 const DOUBLE_TAP_MS = 300;
 const DRAG_THRESHOLD_PX = 6;
@@ -24,23 +24,27 @@ const DRAG_THRESHOLD_PX = 6;
 const settings = (() => {
   try {
     const s = JSON.parse(localStorage.getItem("meowdoku_settings") || "{}");
-    return { sound: s.sound !== false, vibrate: s.vibrate !== false, autoElim: s.autoElim !== false };
-  } catch { return { sound: true, vibrate: true, autoElim: false }; }
+    return { sound: s.sound !== false, vibrate: s.vibrate !== false, autoElim: s.autoElim !== false, hypo: !!s.hypo };
+  } catch { return { sound: true, vibrate: true, autoElim: true, hypo: false }; }
 })();
 
 function saveSettings() {
   try { localStorage.setItem("meowdoku_settings", JSON.stringify(settings)); } catch { }
 }
 
-// Completed-level tracking.
-function getCompleted() {
-  try { return new Set(JSON.parse(localStorage.getItem("meowdoku_done") || "[]")); }
-  catch { return new Set(); }
+// Star tracking: { "n:idx": 1|2|3 }. Migrates old array format to object.
+function getStars() {
+  try {
+    const raw = JSON.parse(localStorage.getItem("meowdoku_done") || "{}");
+    if (Array.isArray(raw)) { const o = {}; raw.forEach(k => { o[k] = 1; }); return o; }
+    return (typeof raw === "object" && raw !== null) ? raw : {};
+  } catch { return {}; }
 }
-function saveCompleted(n, idx) {
-  const done = getCompleted();
-  done.add(`${n}:${idx}`);
-  try { localStorage.setItem("meowdoku_done", JSON.stringify([...done])); } catch { }
+function saveStars(n, idx, stars) {
+  const data = getStars();
+  const key = `${n}:${idx}`;
+  if ((data[key] || 0) < stars) data[key] = stars;
+  try { localStorage.setItem("meowdoku_done", JSON.stringify(data)); } catch { }
 }
 
 const state = {
@@ -71,6 +75,7 @@ const el = {
   btnToggleSound: document.getElementById("btn-toggle-sound"),
   btnToggleVibrate: document.getElementById("btn-toggle-vibrate"),
   btnToggleAuto: document.getElementById("btn-toggle-auto"),
+  btnToggleHypo: document.getElementById("btn-toggle-hypo"),
 };
 
 // ── Audio ────────────────────────────────────────────────────────────────────
@@ -141,6 +146,7 @@ function updateToggleUI() {
   el.btnToggleSound.classList.toggle("off", !settings.sound);
   el.btnToggleVibrate.classList.toggle("off", !settings.vibrate);
   el.btnToggleAuto.classList.toggle("off", !settings.autoElim);
+  el.btnToggleHypo?.classList.toggle("off", !settings.hypo);
 }
 
 async function init() {
@@ -182,6 +188,11 @@ async function init() {
     saveSettings();
     updateToggleUI();
   });
+  el.btnToggleHypo?.addEventListener("click", () => {
+    settings.hypo = !settings.hypo;
+    saveSettings();
+    updateToggleUI();
+  });
 
   el.board.addEventListener("pointerdown", onPointerDown);
   el.board.addEventListener("pointermove", onPointerMove);
@@ -210,12 +221,13 @@ function selectSize(n) {
   });
 
   const count = state.sizes[n];
-  const done = getCompleted();
+  const stars = getStars();
   el.levelButtons.innerHTML = "";
   for (let i = 1; i <= count; i++) {
     const btn = document.createElement("button");
     btn.textContent = String(i);
-    btn.classList.toggle("done", done.has(`${n}:${i}`));
+    const s = stars[`${n}:${i}`] || 0;
+    if (s > 0) { btn.classList.add("done"); btn.dataset.stars = String(s); }
     btn.addEventListener("click", () => startLevel(n, i));
     el.levelButtons.appendChild(btn);
   }
@@ -223,9 +235,12 @@ function selectSize(n) {
 
 function refreshDoneMarks() {
   if (!state.n) return;
-  const done = getCompleted();
+  const stars = getStars();
   [...el.levelButtons.children].forEach((btn, i) => {
-    btn.classList.toggle("done", done.has(`${state.n}:${i + 1}`));
+    const s = stars[`${state.n}:${i + 1}`] || 0;
+    btn.classList.toggle("done", s > 0);
+    if (s > 0) btn.dataset.stars = String(s);
+    else delete btn.dataset.stars;
   });
 }
 
@@ -297,7 +312,8 @@ function renderBoard() {
       cellEl.className = "cell";
       cellEl.style.background = REGION_COLORS[state.regions[r][c] % REGION_COLORS.length];
       cellEl.innerHTML = '<span class="mark"><span class="bar"></span><span class="bar"></span></span>'
-        + '<span class="cat-icon">🐱</span>';
+        + '<span class="cat-icon">🐱</span>'
+        + '<span class="hypo-icon">△</span>';
       cellEls[r][c] = cellEl;
       el.board.appendChild(cellEl);
       updateCellView(r, c);
@@ -319,7 +335,7 @@ function checkWin() {
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (state.board[r][c] === CAT) cats++;
   if (cats === n) {
     state.gameOver = true;
-    saveCompleted(state.n, state.levelIdx);
+    saveStars(state.n, state.levelIdx, state.hearts);
     playWin(); vibrate(300);
     const hasNext = state.levelIdx < state.sizes[state.n];
     el.btnNextLevel.style.display = hasNext ? "" : "none";
@@ -384,6 +400,13 @@ function toggleMark(r, c) {
   playMark(); vibrate(50);
 }
 
+function toggleHypo(r, c) {
+  if (state.gameOver || state.board[r][c] === CAT) return;
+  state.board[r][c] = state.board[r][c] === HYPO ? EMPTY : HYPO;
+  updateCellView(r, c);
+  playMark(); vibrate(50);
+}
+
 // --- Pointer handling: single tap toggles a mark, double tap on the same
 // cell attempts a cat, and press-and-drag paints every swept cell to match
 // the cell where the drag started (not a per-cell toggle). ---
@@ -426,7 +449,9 @@ function onPointerDown(e) {
   startY = e.clientY;
 
   const startState = state.board[cell.r][cell.c];
-  dragTargetState = startState === CAT ? null : (startState === EMPTY ? MARK : EMPTY);
+  if (startState === CAT) dragTargetState = null;
+  else if (settings.hypo) dragTargetState = startState === HYPO ? EMPTY : HYPO;
+  else dragTargetState = startState === EMPTY ? MARK : EMPTY;
 }
 
 function onPointerMove(e) {
@@ -450,7 +475,9 @@ function paintDragCell(r, c) {
   if (key === lastPaintedKey) return;
   lastPaintedKey = key;
   if (dragTargetState === null || state.board[r][c] === CAT) return;
-  if (state.board[r][c] === dragTargetState) return; // already correct state, skip
+  if (state.board[r][c] === dragTargetState) return;
+  const cur = state.board[r][c];
+  if (settings.hypo ? (cur !== EMPTY && cur !== HYPO) : (cur !== EMPTY && cur !== MARK)) return;
   state.board[r][c] = dragTargetState;
   updateCellView(r, c);
   playMark(); vibrate(100);
@@ -487,9 +514,9 @@ function handleTap(r, c) {
     clearTimeout(pendingTap.timer);
     pendingTap = null;
   }
-  // Apply mark immediately for instant feedback
+  // Apply mark/hypo immediately for instant feedback
   const prevState = state.board[r][c];
-  toggleMark(r, c);
+  if (settings.hypo) toggleHypo(r, c); else toggleMark(r, c);
   pendingTap = {
     key,
     prevState,

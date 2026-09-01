@@ -1,9 +1,10 @@
 "use strict";
 
+// Hues: 0°…330° in 30° steps; even indices S=75% L=72% (vivid), odd S=45% L=68% (muted).
 const REGION_COLORS = [
-  "#f5a9a9", "#f7c99e", "#f2e2a0", "#c5e8a8", "#a8ddd0",
-  "#a8d4e8", "#adc0ea", "#c6b3e8", "#dcaee0", "#f2b8d8",
-  "#dcc7a8", "#c7ccd4",
+  "#fcbdbd", "#fcbd7e", "#fcfdbd", "#bdfc7e",
+  "#bdfcbd", "#7efcbd", "#bdfcfc", "#7ebdfc",
+  "#bdbdfc", "#bd7efc", "#fcbdfc", "#fc7ebd",
 ];
 
 const EMPTY = 0, MARK = 1, CAT = 2;
@@ -38,6 +39,60 @@ const el = {
   btnNextLevel: document.getElementById("btn-next-level"),
   btnModalBack: document.getElementById("btn-modal-back"),
 };
+
+// ── Audio ────────────────────────────────────────────────────────────────────
+// All sounds are synthesised with Web Audio API — no external assets needed.
+
+let _ctx = null;
+function _getCtx() {
+  if (!_ctx) _ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (_ctx.state === "suspended") _ctx.resume();
+  return _ctx;
+}
+
+function _tone(freq, type, vol, dur, t) {
+  const ctx = _getCtx();
+  const s = t !== undefined ? t : ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, s);
+  gain.gain.setValueAtTime(vol, s);
+  gain.gain.exponentialRampToValueAtTime(0.001, s + dur);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(s);
+  osc.stop(s + dur);
+}
+
+// Short soft tick for marking/unmarking cells (including each cell during drag).
+function playMark() { _tone(660, "sine", 0.08, 0.10); }
+
+// Warm ding (fundamental + octave) when a cat is placed correctly.
+function playCat() { _tone(880, "sine", 0.18, 0.45); _tone(1760, "sine", 0.08, 0.45); }
+
+// Sharp descending buzz when a cat guess is wrong.
+function playWrong() {
+  const ctx = _getCtx(), t = ctx.currentTime;
+  const osc = ctx.createOscillator(), gain = ctx.createGain();
+  osc.type = "square";
+  osc.frequency.setValueAtTime(240, t);
+  osc.frequency.linearRampToValueAtTime(110, t + 0.40);
+  gain.gain.setValueAtTime(0.12, t);
+  gain.gain.exponentialRampToValueAtTime(0.001, t + 0.40);
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.start(t); osc.stop(t + 0.40);
+}
+
+// C-major arpeggio (C E G C) spread over 0.3 s for the win moment.
+function playWin() {
+  const ctx = _getCtx(), now = ctx.currentTime;
+  [523, 659, 784, 1047].forEach((f, i) => _tone(f, "sine", 0.18, 0.4, now + i * 0.1));
+}
+
+// ── Haptic ───────────────────────────────────────────────────────────────────
+
+function vibrate(ms) { if (navigator.vibrate) navigator.vibrate(ms); }
 
 // Per-cell DOM elements, indexed [row][col], created once per level load.
 let cellEls = [];
@@ -177,6 +232,7 @@ function checkWin() {
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (state.board[r][c] === CAT) cats++;
   if (cats === n) {
     state.gameOver = true;
+    playWin(); vibrate(400);
     const hasNext = state.levelIdx < state.sizes[state.n];
     el.btnNextLevel.style.display = hasNext ? "" : "none";
     el.winModal.classList.remove("hidden");
@@ -200,11 +256,13 @@ function attemptPlaceCat(r, c) {
   if (state.solution[r] === c) {
     state.board[r][c] = CAT;
     updateCellView(r, c);
+    playCat(); vibrate(200);
     checkWin();
   } else {
     state.hearts--;
     renderHearts();
     flashWrong(r, c);
+    playWrong(); vibrate(300);
     if (state.hearts <= 0) triggerGameOver();
   }
 }
@@ -213,6 +271,7 @@ function toggleMark(r, c) {
   if (state.gameOver || state.board[r][c] === CAT) return;
   state.board[r][c] = state.board[r][c] === EMPTY ? MARK : EMPTY;
   updateCellView(r, c);
+  playMark(); vibrate(100);
 }
 
 // --- Pointer handling: single tap toggles a mark, double tap on the same
@@ -281,8 +340,10 @@ function paintDragCell(r, c) {
   if (key === lastPaintedKey) return;
   lastPaintedKey = key;
   if (dragTargetState === null || state.board[r][c] === CAT) return;
+  if (state.board[r][c] === dragTargetState) return; // already correct state, skip
   state.board[r][c] = dragTargetState;
   updateCellView(r, c);
+  playMark(); vibrate(100);
 }
 
 function onPointerUp(e) {

@@ -60,6 +60,17 @@ h2 {
   cursor: pointer;
 }
 
+/* Level list: fixed 5 per row so the last row never stretches */
+#level-buttons {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+}
+
+#level-buttons button {
+  flex: none;
+  min-width: 0;
+}
+
 .button-grid button:active { background: #3c4043; }
 .button-grid button.selected { background: #8ab4f8; color: #202124; font-weight: 700; }
 

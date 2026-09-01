@@ -15,6 +15,7 @@ body {
   background: #202124;
   color: #e8eaed;
   min-height: 100vh;
+  touch-action: manipulation; /* disables double-tap zoom on iOS Safari */
 }
 
 .app-header {
@@ -71,6 +72,33 @@ h2 {
   min-width: 0;
 }
 
+/* Completed level indicator */
+#level-buttons button.done {
+  background: #1b3a22;
+  color: #81c995;
+  position: relative;
+}
+
+#level-buttons button.done::after {
+  content: "✓";
+  position: absolute;
+  bottom: 3px;
+  right: 5px;
+  font-size: 0.5rem;
+  opacity: 0.85;
+}
+
+/* Tool-toggle buttons in the second toolbar row */
+.game-toolbar button.tool-toggle {
+  padding: 8px 9px;
+  min-width: 0;
+}
+
+.game-toolbar button.off {
+  background: #282828;
+  color: #5f6368;
+}
+
 .button-grid button:active { background: #3c4043; }
 .button-grid button.selected { background: #8ab4f8; color: #202124; font-weight: 700; }
 
@@ -90,6 +118,7 @@ h2 {
   color: #e8eaed;
   font-size: 0.9rem;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 #game-title {

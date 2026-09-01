@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Meowdoku 🐱</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1>🐱 Meowdoku</h1>
+  </header>
+
+  <main id="app">
+    <section id="screen-select" class="screen">
+      <h2>選擇盤面大小</h2>
+      <div id="size-buttons" class="button-grid"></div>
+
+      <h2>選擇關卡</h2>
+      <div id="level-buttons" class="button-grid"></div>
+    </section>
+
+    <section id="screen-game" class="screen hidden">
+      <div class="game-toolbar">
+        <button id="btn-back">← 返回</button>
+        <span id="game-title"></span>
+        <span id="hearts" class="hearts"></span>
+      </div>
+      <div class="game-toolbar">
+        <button id="btn-clear">清空</button>
+        <button id="btn-restart">重新開始</button>
+      </div>
+      <div id="status-banner" class="status-banner hidden"></div>
+      <div id="board" class="board"></div>
+      <p class="hint">點一下：打叉標記／取消　按住拖曳：整排塗成同狀態　快速點兩下：猜貓（錯了扣一顆心）</p>
+    </section>
+  </main>
+
+  <script src="game.js"></script>
+</body>
+</html>

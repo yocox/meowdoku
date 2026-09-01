@@ -7,7 +7,6 @@ const REGION_COLORS = [
 ];
 
 const EMPTY = 0, MARK = 1, CAT = 2;
-const CELL_ICON = { [EMPTY]: "", [MARK]: "✕", [CAT]: "🐱" };
 const HEARTS_MAX = 3;
 const DOUBLE_TAP_MS = 300;
 const DRAG_THRESHOLD_PX = 6;
@@ -144,6 +143,8 @@ function renderBoard() {
       const cellEl = document.createElement("div");
       cellEl.className = "cell";
       cellEl.style.background = REGION_COLORS[state.regions[r][c] % REGION_COLORS.length];
+      cellEl.innerHTML = '<span class="mark"><span class="bar"></span><span class="bar"></span></span>'
+        + '<span class="cat-icon">🐱</span>';
       cellEls[r][c] = cellEl;
       el.board.appendChild(cellEl);
       updateCellView(r, c);
@@ -152,7 +153,7 @@ function renderBoard() {
 }
 
 function updateCellView(r, c) {
-  cellEls[r][c].textContent = CELL_ICON[state.board[r][c]];
+  cellEls[r][c].dataset.state = String(state.board[r][c]);
 }
 
 function renderHearts() {

@@ -1,3 +1,11 @@
+:root {
+  /* Cell-content sizing: numbers are a percentage of the cell's own
+     width (via CSS container query units, not the whole board). Tune
+     these directly — see develop.md for how they interact. */
+  --cat-scale: 80;        /* cat emoji size */
+  --mark-scale: 80;       /* X mark bounding box (diagonal reach) */
+  --mark-thickness: 16;   /* X mark stroke thickness */
+}
 
 * { box-sizing: border-box; }
 
@@ -108,14 +116,43 @@ h2 {
 }
 
 .cell {
+  container-type: inline-size;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: min(6vw, 1.6rem);
   border-radius: 10px;
   cursor: pointer;
 }
+
+.cell .cat-icon {
+  display: none;
+  font-size: calc(var(--cat-scale) * 1cqw);
+  line-height: 1;
+}
+
+.cell .mark {
+  display: none;
+  position: relative;
+  width: calc(var(--mark-scale) * 1cqw);
+  height: calc(var(--mark-scale) * 1cqw);
+}
+
+.cell .mark .bar {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: calc(var(--mark-thickness) * 1cqw);
+  background: rgba(32, 33, 36, 0.75);
+  border-radius: calc(var(--mark-thickness) * 0.5 * 1cqw);
+}
+
+.cell .mark .bar:first-child { transform: translate(-50%, -50%) rotate(45deg); }
+.cell .mark .bar:last-child { transform: translate(-50%, -50%) rotate(-45deg); }
+
+.cell[data-state="1"] .mark { display: block; }
+.cell[data-state="2"] .cat-icon { display: block; }
 
 .cell:hover::after,
 .cell.wrong::after {

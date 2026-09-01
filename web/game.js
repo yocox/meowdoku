@@ -34,6 +34,9 @@ const el = {
   btnBack: document.getElementById("btn-back"),
   btnClear: document.getElementById("btn-clear"),
   btnRestart: document.getElementById("btn-restart"),
+  winModal: document.getElementById("win-modal"),
+  btnNextLevel: document.getElementById("btn-next-level"),
+  btnModalBack: document.getElementById("btn-modal-back"),
 };
 
 // Per-cell DOM elements, indexed [row][col], created once per level load.
@@ -47,6 +50,14 @@ async function init() {
   el.btnBack.addEventListener("click", showSelectScreen);
   el.btnClear.addEventListener("click", clearBoard);
   el.btnRestart.addEventListener("click", () => startLevel(state.n, state.levelIdx));
+  el.btnNextLevel.addEventListener("click", () => {
+    el.winModal.classList.add("hidden");
+    startLevel(state.n, state.levelIdx + 1);
+  });
+  el.btnModalBack.addEventListener("click", () => {
+    el.winModal.classList.add("hidden");
+    showSelectScreen();
+  });
 
   el.board.addEventListener("pointerdown", onPointerDown);
   el.board.addEventListener("pointermove", onPointerMove);
@@ -165,8 +176,10 @@ function checkWin() {
   let cats = 0;
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (state.board[r][c] === CAT) cats++;
   if (cats === n) {
-    el.statusBanner.textContent = "🎉 完成！唯一解找到了！";
-    el.statusBanner.className = "status-banner win";
+    state.gameOver = true;
+    const hasNext = state.levelIdx < state.sizes[state.n];
+    el.btnNextLevel.style.display = hasNext ? "" : "none";
+    el.winModal.classList.remove("hidden");
   }
 }
 
@@ -212,7 +225,8 @@ let dragTargetState = null;
 let dragOrigin = null;
 let lastPaintedKey = null;
 let startX = 0, startY = 0;
-let pendingTap = null; // { r, c, timer }
+let pendingTap = null; // { key, prevState, timer }
+let activeCellEl = null;
 
 function cellFromPoint(clientX, clientY) {
   const n = state.n;
@@ -226,9 +240,13 @@ function cellFromPoint(clientX, clientY) {
 }
 
 function onPointerDown(e) {
+  e.preventDefault();
   if (state.gameOver || pointerId !== null) return;
   const cell = cellFromPoint(e.clientX, e.clientY);
   if (!cell) return;
+
+  activeCellEl = cellEls[cell.r][cell.c];
+  activeCellEl.classList.add("active");
 
   pointerId = e.pointerId;
   el.board.setPointerCapture(pointerId);
@@ -251,6 +269,7 @@ function onPointerMove(e) {
     const leftOrigin = cell && (cell.r !== dragOrigin.r || cell.c !== dragOrigin.c);
     if (!moved && !leftOrigin) return;
     dragging = true;
+    if (activeCellEl) { activeCellEl.classList.remove("active"); activeCellEl = null; }
     paintDragCell(dragOrigin.r, dragOrigin.c);
   }
 
@@ -269,6 +288,7 @@ function paintDragCell(r, c) {
 function onPointerUp(e) {
   if (e.pointerId !== pointerId) return;
   el.board.releasePointerCapture(pointerId);
+  if (activeCellEl) { activeCellEl.classList.remove("active"); activeCellEl = null; }
   const wasDragging = dragging;
   const origin = dragOrigin;
   pointerId = null;
@@ -282,16 +302,27 @@ function handleTap(r, c) {
   const key = `${r},${c}`;
   if (pendingTap && pendingTap.key === key) {
     clearTimeout(pendingTap.timer);
+    // Undo the mark applied on first tap, then place cat
+    if (pendingTap.prevState !== undefined) {
+      state.board[r][c] = pendingTap.prevState;
+      updateCellView(r, c);
+    }
     pendingTap = null;
     attemptPlaceCat(r, c);
     return;
   }
+  // Flush any pending tap on a different cell
+  if (pendingTap) {
+    clearTimeout(pendingTap.timer);
+    pendingTap = null;
+  }
+  // Apply mark immediately for instant feedback
+  const prevState = state.board[r][c];
+  toggleMark(r, c);
   pendingTap = {
     key,
-    timer: setTimeout(() => {
-      pendingTap = null;
-      toggleMark(r, c);
-    }, DOUBLE_TAP_MS),
+    prevState,
+    timer: setTimeout(() => { pendingTap = null; }, DOUBLE_TAP_MS),
   };
 }
 

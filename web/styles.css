@@ -110,7 +110,9 @@ h2 {
   aspect-ratio: 1 / 1;
   touch-action: none;
   user-select: none;
+  -webkit-user-select: none;
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
   border-radius: 12px;
   cursor: pointer;
 }
@@ -123,6 +125,9 @@ h2 {
   justify-content: center;
   border-radius: 10px;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .cell .cat-icon {
@@ -155,6 +160,7 @@ h2 {
 .cell[data-state="2"] .cat-icon { display: block; }
 
 .cell:hover::after,
+.cell.active::after,
 .cell.wrong::after {
   content: "";
   position: absolute;
@@ -167,9 +173,71 @@ h2 {
   box-shadow: inset 0 0 0 3px rgba(32, 33, 36, 0.45);
 }
 
+.cell.active::after {
+  background: rgba(0, 0, 0, 0.18);
+}
+
 .cell.wrong::after {
   box-shadow: inset 0 0 0 3px #ea4335;
   background: rgba(234, 67, 53, 0.3);
+}
+
+/* Win modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-overlay.hidden { display: none; }
+
+.modal-box {
+  background: #303134;
+  border-radius: 20px;
+  padding: 36px 32px 28px;
+  text-align: center;
+  min-width: 240px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.modal-emoji {
+  font-size: 3rem;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+
+.modal-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #a8e6a3;
+  margin-bottom: 28px;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.modal-buttons button {
+  padding: 10px 22px;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  cursor: pointer;
+  background: #8ab4f8;
+  color: #202124;
+  font-weight: 700;
+}
+
+.modal-buttons button.secondary {
+  background: #5f6368;
+  color: #e8eaed;
+  font-weight: 400;
 }
 
 .hint {

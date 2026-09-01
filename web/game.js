@@ -232,7 +232,7 @@ function checkWin() {
   for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (state.board[r][c] === CAT) cats++;
   if (cats === n) {
     state.gameOver = true;
-    playWin(); vibrate(400);
+    playWin(); vibrate(300);
     const hasNext = state.levelIdx < state.sizes[state.n];
     el.btnNextLevel.style.display = hasNext ? "" : "none";
     el.winModal.classList.remove("hidden");
@@ -256,13 +256,13 @@ function attemptPlaceCat(r, c) {
   if (state.solution[r] === c) {
     state.board[r][c] = CAT;
     updateCellView(r, c);
-    playCat(); vibrate(200);
+    playCat(); vibrate(100);
     checkWin();
   } else {
     state.hearts--;
     renderHearts();
     flashWrong(r, c);
-    playWrong(); vibrate(300);
+    playWrong(); vibrate(200);
     if (state.hearts <= 0) triggerGameOver();
   }
 }
@@ -271,7 +271,7 @@ function toggleMark(r, c) {
   if (state.gameOver || state.board[r][c] === CAT) return;
   state.board[r][c] = state.board[r][c] === EMPTY ? MARK : EMPTY;
   updateCellView(r, c);
-  playMark(); vibrate(100);
+  playMark(); vibrate(50);
 }
 
 // --- Pointer handling: single tap toggles a mark, double tap on the same

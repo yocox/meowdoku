@@ -43,6 +43,28 @@ tune, and it looked too thin. The X is now drawn as two CSS `div`s
 (`.mark .bar`) rotated ±45°, so both its size and stroke thickness are
 explicit numbers instead of "whatever the font happens to draw."
 
+## Tuning region colors
+
+Region colors live in `web/game.js`, in the `REGION_COLORS` array near
+the top of the file:
+
+```js
+const REGION_COLORS = [
+  "#f5a9a9", "#f7c99e", "#f2e2a0", "#c5e8a8", "#a8ddd0",
+  "#a8d4e8", "#adc0ea", "#c6b3e8", "#dcaee0", "#f2b8d8",
+  "#dcc7a8", "#c7ccd4",
+];
+```
+
+- Index 0 is region `A` in the level files, index 1 is `B`, and so on.
+- The largest board is n=12, so keep at least 12 entries. If there are
+  fewer than the level's region count, `game.js` wraps around with
+  `REGION_COLORS[regionId % REGION_COLORS.length]` (see the
+  `cellEl.style.background` line in `renderBoard`) — that means colors
+  start repeating on the board, so don't let the array get shorter
+  than 12 unless you're okay with that.
+- Edit the hex values and reload, no build step.
+
 ## Generating levels
 
 See the "Generating levels" section in `README.md`.

@@ -182,10 +182,36 @@ def format_level(n: int, regions: List[List[str]], solution: List[int]) -> str:
     return "\n".join(lines) + "\n"
 
 
+import re as _re
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parent))
+from difficulty_analyzer import analyze as _analyze
+
+
+def _scan_existing(level_dir: Path, n: int) -> tuple[set[str], set[int]]:
+    """Return (fingerprint set, set of existing indices)."""
+    fingerprints: set[str] = set()
+    existing: set[int] = set()
+    pat = _re.compile(rf"level_{n}_(\d+)\.txt$")
+    if not level_dir.exists():
+        return fingerprints, existing
+    for path in level_dir.glob(f"level_{n}_*.txt"):
+        m = pat.match(path.name)
+        if not m:
+            continue
+        idx = int(m.group(1))
+        existing.add(idx)
+        lines = path.read_text().splitlines()
+        if len(lines) >= n + 1:
+            fingerprints.add("".join(lines[1:n + 1]))
+    return fingerprints, existing
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate meowdoku levels")
     parser.add_argument("--sizes", type=int, nargs="+", default=list(range(8, 13)))
-    parser.add_argument("--count", type=int, default=5, help="levels per size")
+    parser.add_argument("--to", type=int, required=True,
+                        help="fill gaps so that indices 1..N all exist")
     parser.add_argument("--out", type=Path, default=Path(__file__).resolve().parent.parent / "levels")
     parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
@@ -195,11 +221,39 @@ def main():
     for n in args.sizes:
         out_dir = args.out / str(n)
         out_dir.mkdir(parents=True, exist_ok=True)
-        for idx in range(1, args.count + 1):
-            regions, solution = generate_level(n, rng)
-            path = out_dir / f"level_{n}_{idx:03d}.txt"
-            path.write_text(format_level(n, regions, solution))
-            print(f"wrote {path}")
+
+        fingerprints, existing = _scan_existing(out_dir, n)
+        missing = sorted(i for i in range(1, args.to + 1) if i not in existing)
+        if not missing:
+            print(f"n={n}: all {args.to} levels already exist, nothing to do")
+            continue
+        print(f"n={n}: filling {len(missing)} gap(s) up to {args.to}")
+
+        dupes = 0
+        d9_regen = 0
+        for idx in missing:
+            while True:
+                regions, solution = generate_level(n, rng)
+                fp = "".join("".join(row) for row in regions)
+                if fp in fingerprints:
+                    dupes += 1
+                    continue
+
+                path = out_dir / f"level_{n}_{idx:03d}.txt"
+                path.write_text(format_level(n, regions, solution))
+
+                result = _analyze(path)
+                if 9 in result["histogram"] or not result["solved"]:
+                    path.unlink()
+                    d9_regen += 1
+                    continue
+
+                fingerprints.add(fp)
+                print(f"  wrote {path.name}")
+                break
+
+        if dupes:    print(f"  ({dupes} duplicate(s) skipped for n={n})")
+        if d9_regen: print(f"  ({d9_regen} D9 level(s) regenerated for n={n})")
 
 
 if __name__ == "__main__":

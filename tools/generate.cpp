@@ -12,6 +12,7 @@
 #include <numeric>
 #include <optional>
 #include <random>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -265,11 +266,66 @@ static void generate_level(int n, std::mt19937 &rng,
     throw std::runtime_error("failed to generate unique-solution level");
 }
 
+// ── Existing-level scanner (append + duplicate detection) ────────────────────
+
+struct LevelDB {
+    std::set<std::string> fingerprints;
+    std::set<int>         existing_indices;
+
+    void load(const fs::path &dir, int n) {
+        if (!fs::exists(dir)) return;
+        std::string prefix = "level_" + std::to_string(n) + "_";
+        std::string suffix = ".txt";
+        for (auto &e : fs::directory_iterator(dir)) {
+            std::string fname = e.path().filename().string();
+            if (fname.size() <= prefix.size() + suffix.size()) continue;
+            if (fname.compare(0, prefix.size(), prefix) != 0) continue;
+            if (fname.compare(fname.size() - suffix.size(), suffix.size(), suffix) != 0) continue;
+            std::string num = fname.substr(prefix.size(),
+                                           fname.size() - prefix.size() - suffix.size());
+            int idx = 0;
+            try { idx = std::stoi(num); } catch (...) { continue; }
+            existing_indices.insert(idx);
+            std::ifstream f(e.path());
+            std::string line, fp;
+            std::getline(f, line); // skip the "n" line
+            for (int r = 0; r < n && std::getline(f, line); ++r)
+                fp += line;
+            fingerprints.insert(fp);
+        }
+    }
+
+    std::vector<int> missing_up_to(int to) const {
+        std::vector<int> result;
+        for (int i = 1; i <= to; ++i)
+            if (!existing_indices.count(i))
+                result.push_back(i);
+        return result;
+    }
+
+    std::string fingerprint(const int owner[][MAXN], int n) const {
+        std::string fp;
+        fp.reserve(n * n);
+        for (int r = 0; r < n; ++r)
+            for (int c = 0; c < n; ++c)
+                fp += LETTERS[owner[r][c]];
+        return fp;
+    }
+
+    bool is_duplicate(const int owner[][MAXN], int n) const {
+        return fingerprints.count(fingerprint(owner, n)) > 0;
+    }
+
+    void add(const int owner[][MAXN], int n) {
+        fingerprints.insert(fingerprint(owner, n));
+    }
+};
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 int main(int argc, char *argv[]) {
     std::vector<int> sizes;
-    int count = 5;
+    int to_idx = -1;
     fs::path out_dir = "levels";
     std::optional<uint64_t> seed_val;
 
@@ -278,12 +334,17 @@ int main(int argc, char *argv[]) {
         if (a == "--sizes") {
             while (i+1 < argc && std::isdigit((unsigned char)argv[i+1][0]))
                 sizes.push_back(std::stoi(argv[++i]));
-        } else if (a == "--count") { count    = std::stoi(argv[++i]);
-        } else if (a == "--out")   { out_dir  = argv[++i];
-        } else if (a == "--seed")  { seed_val = std::stoull(argv[++i]);
+        } else if (a == "--to")   { to_idx   = std::stoi(argv[++i]);
+        } else if (a == "--out")  { out_dir  = argv[++i];
+        } else if (a == "--seed") { seed_val = std::stoull(argv[++i]);
         }
     }
     if (sizes.empty()) sizes = {8, 9, 10, 11, 12};
+    if (to_idx < 1) { std::cerr << "Usage: generate --to N [--sizes ...] [--seed S]\n"; return 1; }
+
+    // Path to the Python analyzer (same directory as this exe)
+    fs::path exe_dir = fs::absolute(fs::path(argv[0])).parent_path();
+    fs::path analyzer = exe_dir / "difficulty_analyzer.py";
 
     std::mt19937 rng(seed_val ? (uint32_t)*seed_val : std::random_device{}());
 
@@ -293,22 +354,55 @@ int main(int argc, char *argv[]) {
     for (int n : sizes) {
         fs::path lvl_dir = out_dir / std::to_string(n);
         fs::create_directories(lvl_dir);
-        for (int idx = 1; idx <= count; ++idx) {
-            generate_level(n, rng, owner, cat_cols);
-            char fname[32];
-            std::snprintf(fname, sizeof(fname), "level_%d_%03d.txt", n, idx);
-            fs::path path = lvl_dir / fname;
-            std::ofstream f(path);
-            f << n << '\n';
-            for (int r = 0; r < n; ++r) {
-                for (int c = 0; c < n; ++c) f << LETTERS[owner[r][c]];
-                f << '\n';
-            }
-            f << "# solution:";
-            for (int r = 0; r < n; ++r) f << ' ' << cat_cols[r];
-            f << '\n';
-            std::cout << "wrote " << path.string() << '\n';
+
+        LevelDB db;
+        db.load(lvl_dir, n);
+
+        std::vector<int> missing = db.missing_up_to(to_idx);
+        if (missing.empty()) {
+            std::cout << "n=" << n << ": all " << to_idx << " levels exist, nothing to do\n";
+            continue;
         }
+        std::cout << "n=" << n << ": filling " << missing.size() << " gap(s) up to " << to_idx << '\n';
+
+        int dupes = 0, d9_regen = 0;
+        for (int idx : missing) {
+            while (true) {
+                generate_level(n, rng, owner, cat_cols);
+                if (db.is_duplicate(owner, n)) { ++dupes; continue; }
+
+                char fname[32];
+                std::snprintf(fname, sizeof(fname), "level_%d_%03d.txt", n, idx);
+                fs::path path = lvl_dir / fname;
+
+                { // write candidate
+                    std::ofstream f(path);
+                    f << n << '\n';
+                    for (int r = 0; r < n; ++r) {
+                        for (int c = 0; c < n; ++c) f << LETTERS[owner[r][c]];
+                        f << '\n';
+                    }
+                    f << "# solution:";
+                    for (int r = 0; r < n; ++r) f << ' ' << cat_cols[r];
+                    f << '\n';
+                }
+
+                // D9 check via Python analyzer
+                std::string cmd = "python \"" + analyzer.string()
+                                + "\" --check \"" + path.string() + "\" > nul 2>&1";
+                if (std::system(cmd.c_str()) != 0) {
+                    fs::remove(path);
+                    ++d9_regen;
+                    continue;
+                }
+
+                db.add(owner, n);
+                std::cout << "  wrote " << path.filename().string() << '\n';
+                break;
+            }
+        }
+        if (dupes)    std::cout << "  (" << dupes    << " duplicate(s) skipped)\n";
+        if (d9_regen) std::cout << "  (" << d9_regen << " D9 level(s) regenerated)\n";
     }
     return 0;
 }

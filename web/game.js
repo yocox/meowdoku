@@ -1,21 +1,21 @@
 "use strict";
 
 const REGION_COLORS = [
-  "#EDB9B9",  // red
-  "#B88357",  // orange
-  "#EAB226",  // amber
-  "#CCDCB3",  // lime
-  "#68B685",  // green
-  "#00FFA2",  // emerald
-  "#8CADBB",  // sky
-  "#5889C3",  // blue
-  "#3B48BA",  // indigo
-  "#BDA9D0",  // purple
-  "#AD59BA",  // fuchsia
-  "#C71370",  // pink
+  "#EDB9B9",  // 粉紅
+  "#B88357",  // 棕色
+  "#EAB226",  // 黃色
+  "#CCDCB3",  // 米黃
+  "#68B685",  // 暗綠
+  "#00FFA2",  // 亮綠
+  "#8CADBB",  // 藍灰
+  "#5889C3",  // 藍色
+  "#3B48BA",  // 深藍
+  "#BDA9D0",  // 粉紫
+  "#AD59BA",  // 紫色
+  "#C71370",  // 桃紅
 ];
 
-const EMPTY = 0, MARK = 1, CAT = 2, HYPO = 3;
+const EMPTY = 0, MARK = 1, CAT = 2, HYPO = 3, WRONG = 4;
 const HEARTS_MAX = 3;
 const DOUBLE_TAP_MS = 300;
 const DRAG_THRESHOLD_PX = 6;
@@ -71,7 +71,11 @@ const el = {
   btnRestart: document.getElementById("btn-restart"),
   winModal: document.getElementById("win-modal"),
   btnNextLevel: document.getElementById("btn-next-level"),
+  btnReplay: document.getElementById("btn-replay"),
   btnModalBack: document.getElementById("btn-modal-back"),
+  helpModal: document.getElementById("help-modal"),
+  btnHelp: document.getElementById("btn-help"),
+  btnHelpClose: document.getElementById("btn-help-close"),
   btnToggleSound: document.getElementById("btn-toggle-sound"),
   btnToggleVibrate: document.getElementById("btn-toggle-vibrate"),
   btnToggleAuto: document.getElementById("btn-toggle-auto"),
@@ -161,9 +165,19 @@ async function init() {
     el.winModal.classList.add("hidden");
     startLevel(state.n, state.levelIdx + 1);
   });
+  el.btnReplay?.addEventListener("click", () => {
+    el.winModal.classList.add("hidden");
+    startLevel(state.n, state.levelIdx);
+  });
   el.btnModalBack?.addEventListener("click", () => {
     el.winModal.classList.add("hidden");
     history.back();
+  });
+
+  el.btnHelp?.addEventListener("click", () => el.helpModal.classList.remove("hidden"));
+  el.btnHelpClose?.addEventListener("click", () => el.helpModal.classList.add("hidden"));
+  el.helpModal?.addEventListener("click", (e) => {
+    if (e.target === el.helpModal) el.helpModal.classList.add("hidden");
   });
 
   window.addEventListener("popstate", () => {
@@ -345,15 +359,10 @@ function checkWin() {
 
 function triggerGameOver() {
   state.gameOver = true;
-  el.statusBanner.textContent = "💔 愛心用完了，按「重新開始」再試一次";
+  el.statusBanner.textContent = "💔 掰了，按「重來」再試一次";
   el.statusBanner.className = "status-banner lose";
 }
 
-function flashWrong(r, c) {
-  const cellEl = cellEls[r][c];
-  cellEl.classList.add("wrong");
-  setTimeout(() => cellEl.classList.remove("wrong"), 300);
-}
 
 // Auto-eliminate: when a cat is correctly placed, mark same row, same column,
 // surrounding 8 cells, and entire same-region (same color) as MARK.
@@ -377,7 +386,7 @@ function autoEliminate(r, c) {
 }
 
 function attemptPlaceCat(r, c) {
-  if (state.gameOver || state.board[r][c] === CAT) return;
+  if (state.gameOver || state.board[r][c] === CAT || state.board[r][c] === WRONG) return;
   if (state.solution[r] === c) {
     state.board[r][c] = CAT;
     updateCellView(r, c);
@@ -387,21 +396,22 @@ function attemptPlaceCat(r, c) {
   } else {
     state.hearts--;
     renderHearts();
-    flashWrong(r, c);
+    state.board[r][c] = WRONG;
+    updateCellView(r, c);
     playWrong(); vibrate(200);
     if (state.hearts <= 0) triggerGameOver();
   }
 }
 
 function toggleMark(r, c) {
-  if (state.gameOver || state.board[r][c] === CAT) return;
+  if (state.gameOver || state.board[r][c] === CAT || state.board[r][c] === WRONG) return;
   state.board[r][c] = state.board[r][c] === EMPTY ? MARK : EMPTY;
   updateCellView(r, c);
   playMark(); vibrate(50);
 }
 
 function toggleHypo(r, c) {
-  if (state.gameOver || state.board[r][c] === CAT) return;
+  if (state.gameOver || state.board[r][c] === CAT || state.board[r][c] === WRONG) return;
   state.board[r][c] = state.board[r][c] === HYPO ? EMPTY : HYPO;
   updateCellView(r, c);
   playMark(); vibrate(50);
@@ -437,8 +447,11 @@ function onPointerDown(e) {
   if (!cell) return;
   e.preventDefault(); // only suppress default when pointer is actually over the board
 
-  activeCellEl = cellEls[cell.r][cell.c];
-  activeCellEl.classList.add("active");
+  const startState = state.board[cell.r][cell.c];
+  if (startState !== WRONG) {
+    activeCellEl = cellEls[cell.r][cell.c];
+    activeCellEl.classList.add("active");
+  }
 
   pointerId = e.pointerId;
   el.board.setPointerCapture(pointerId);
@@ -448,8 +461,7 @@ function onPointerDown(e) {
   startX = e.clientX;
   startY = e.clientY;
 
-  const startState = state.board[cell.r][cell.c];
-  if (startState === CAT) dragTargetState = null;
+  if (startState === CAT || startState === WRONG) dragTargetState = null;
   else if (settings.hypo) dragTargetState = startState === HYPO ? EMPTY : HYPO;
   else dragTargetState = startState === EMPTY ? MARK : EMPTY;
 }
@@ -474,7 +486,7 @@ function paintDragCell(r, c) {
   const key = `${r},${c}`;
   if (key === lastPaintedKey) return;
   lastPaintedKey = key;
-  if (dragTargetState === null || state.board[r][c] === CAT) return;
+  if (dragTargetState === null || state.board[r][c] === CAT || state.board[r][c] === WRONG) return;
   if (state.board[r][c] === dragTargetState) return;
   const cur = state.board[r][c];
   if (settings.hypo ? (cur !== EMPTY && cur !== HYPO) : (cur !== EMPTY && cur !== MARK)) return;
@@ -497,6 +509,7 @@ function onPointerUp(e) {
 }
 
 function handleTap(r, c) {
+  if (state.board[r][c] === WRONG) return;
   const key = `${r},${c}`;
   if (pendingTap && pendingTap.key === key) {
     clearTimeout(pendingTap.timer);

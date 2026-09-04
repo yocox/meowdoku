@@ -24,8 +24,8 @@ const DRAG_THRESHOLD_PX = 6;
 const settings = (() => {
   try {
     const s = JSON.parse(localStorage.getItem("meowdoku_settings") || "{}");
-    return { sound: s.sound !== false, vibrate: s.vibrate !== false, autoElim: s.autoElim !== false, hypo: !!s.hypo };
-  } catch { return { sound: true, vibrate: true, autoElim: true, hypo: false }; }
+    return { sound: s.sound !== false, vibrate: s.vibrate !== false, autoElim: !!s.autoElim, hypo: !!s.hypo, showHelp: s.showHelp !== false };
+  } catch { return { sound: true, vibrate: true, autoElim: false, hypo: false, showHelp: true }; }
 })();
 
 function saveSettings() {
@@ -175,7 +175,11 @@ async function init() {
   });
 
   el.btnHelp?.addEventListener("click", () => el.helpModal.classList.remove("hidden"));
-  el.btnHelpClose?.addEventListener("click", () => el.helpModal.classList.add("hidden"));
+  el.btnHelpClose?.addEventListener("click", () => {
+    el.helpModal.classList.add("hidden")
+    settings.showHelp = false;
+    saveSettings();
+  });
   el.helpModal?.addEventListener("click", (e) => {
     if (e.target === el.helpModal) el.helpModal.classList.add("hidden");
   });
@@ -277,6 +281,8 @@ async function startLevel(n, idx) {
   showGameScreen();
   renderBoard();
   renderHearts();
+  if (settings.showHelp)
+    el.helpModal.classList.remove("hidden");
 }
 
 function parseLevel(text) {

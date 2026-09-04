@@ -71,6 +71,12 @@ h2 {
   cursor: pointer;
 }
 
+/* Size list: fixed 5 per row so the last row never stretches */
+#size-buttons {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+}
+
 /* Level list: fixed 5 per row so the last row never stretches */
 #level-buttons {
   display: grid;

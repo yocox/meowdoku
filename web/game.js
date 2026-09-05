@@ -359,7 +359,7 @@ function checkWin() {
     playWin(); vibrate(300);
     const hasNext = state.levelIdx < state.sizes[state.n];
     el.btnNextLevel.style.display = hasNext ? "" : "none";
-    el.winModal.classList.remove("hidden");
+    setTimeout(() => el.winModal.classList.remove("hidden"), 300);
   }
 }
 

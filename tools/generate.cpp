@@ -1,5 +1,5 @@
 // tools/generate.cpp  –  Meowdoku level generator (C++ rewrite of generate.py + solver.py)
-// Compile: clang++ -O3 -std=c++17 tools/generate.cpp -o tools/generate
+// Compile: clang++ -O3 -std=c++17 tools/generate.cpp tools/difficulty_analyzer.cpp -o tools/generate
 // Usage:   generate [--sizes N...] [--count K] [--out DIR] [--seed S]
 
 #include <algorithm>
@@ -16,6 +16,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include "difficulty_analyzer.h"
 
 namespace fs = std::filesystem;
 
@@ -321,6 +323,18 @@ struct LevelDB {
     }
 };
 
+static void write_level_file(const fs::path &path, int n, const int owner[][MAXN], const int *cat_cols) {
+    std::ofstream f(path);
+    f << n << '\n';
+    for (int r = 0; r < n; ++r) {
+        for (int c = 0; c < n; ++c) f << LETTERS[owner[r][c]];
+        f << '\n';
+    }
+    f << "# solution:";
+    for (int r = 0; r < n; ++r) f << ' ' << cat_cols[r];
+    f << '\n';
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 int main(int argc, char *argv[]) {
@@ -341,10 +355,6 @@ int main(int argc, char *argv[]) {
     }
     if (sizes.empty()) sizes = {8, 9, 10, 11, 12};
     if (to_idx < 1) { std::cerr << "Usage: generate --to N [--sizes ...] [--seed S]\n"; return 1; }
-
-    // Path to the Python analyzer (same directory as this exe)
-    fs::path exe_dir = fs::absolute(fs::path(argv[0])).parent_path();
-    fs::path analyzer = exe_dir / "difficulty_analyzer.py";
 
     std::mt19937 rng(seed_val ? (uint32_t)*seed_val : std::random_device{}());
 
@@ -387,35 +397,21 @@ int main(int argc, char *argv[]) {
                 generate_level(n, rng, owner, cat_cols);
                 if (db.is_duplicate(owner, n)) { ++dupes; continue; }
 
-                char fname[32];
-                std::snprintf(fname, sizeof(fname), "level_%d_%08d.txt", n, idx);
-                fs::path path = lvl_dir / fname;
-
-                { // write candidate
-                    std::ofstream f(path);
-                    f << n << '\n';
-                    for (int r = 0; r < n; ++r) {
-                        for (int c = 0; c < n; ++c) f << LETTERS[owner[r][c]];
-                        f << '\n';
-                    }
-                    f << "# solution:";
-                    for (int r = 0; r < n; ++r) f << ' ' << cat_cols[r];
-                    f << '\n';
-                }
-
-                // D9 check via Python analyzer
-                std::string cmd = "python \"" + analyzer.string()
-                                + "\" --check \"" + path.string() + "\" > nul 2>&1";
-                if (std::system(cmd.c_str()) != 0) {
+                if (!difficulty::is_pure_logic_solvable(owner, n)) {
                     // Can't be solved by pure logical deduction. Don't throw it
                     // away — stash it in levels/backtrack for a future
                     // "backtracking required" challenge pack.
                     char bt_fname[32];
                     std::snprintf(bt_fname, sizeof(bt_fname), "level_%d_%08d.txt", n, bt_next++);
-                    fs::rename(path, backtrack_dir / bt_fname);
+                    write_level_file(backtrack_dir / bt_fname, n, owner, cat_cols);
                     ++d9_regen;
                     continue;
                 }
+
+                char fname[32];
+                std::snprintf(fname, sizeof(fname), "level_%d_%08d.txt", n, idx);
+                fs::path path = lvl_dir / fname;
+                write_level_file(path, n, owner, cat_cols);
 
                 db.add(owner, n);
                 std::cout << "  wrote " << path.filename().string() << '\n';

@@ -16,7 +16,7 @@ No build step. All frontend changes take effect on browser reload.
 
 ```sh
 # C++ generator (fast, preferred)
-clang++ -O3 -std=c++17 tools/generate.cpp -o tools/generate.exe
+clang++ -O3 -std=c++17 tools/generate.cpp tools/difficulty_analyzer.cpp -o tools/generate.exe
 tools/generate.exe --sizes 8 9 10 11 12 --count 50 --seed 42
 
 # Python generator (slower, same algorithm)
@@ -73,7 +73,9 @@ Pointer Events API (`pointerdown/move/up/cancel` on `#board`). The board calls `
 
 1. `generate.py` / `generate.cpp` — same algorithm: random no-adjacent-column permutation → multi-source BFS flood fill per region → uniqueness check → targeted boundary-cell repair loop (up to 400 iterations) to kill alternate solutions without moving cat cells. C++ is ~12× faster.
 2. `solver.py` — pure-Python backtracker used by `generate.py`. The C++ rewrite inlines the solver.
-3. `build_index.py` — scans `levels/` and writes `web/levels_index.json`.
+3. `difficulty_analyzer.py` / `difficulty_analyzer.{h,cpp}` — same tier1/tier2/tierk human-reasoning simulation (see the module docstring for tier definitions); the C++ port drops the step-by-step descriptions and is called in-process by `generate.cpp` (no subprocess launch) to reject boards that need backtracking (D9). Keep both in sync if the reasoning rules change; use the Python version for human-readable reports (`--step-by-step`, `--prune`).
+4. Levels that fail the D9 check aren't discarded — they're written to `levels/backtrack/level_<n>_<idx>.txt` (flat, mixed sizes) instead of the per-size dirs, for a future "requires backtracking" challenge pack. `build_index.py` skips this directory.
+5. `build_index.py` — scans `levels/` (excluding `levels/backtrack`) and writes `web/levels_index.json`.
 
 ### Tuning colors and icon sizes
 

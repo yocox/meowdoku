@@ -177,8 +177,8 @@ function vibrate(ms) { if (settings.vibrate && navigator.vibrate) navigator.vibr
 let cellEls = [];
 
 function updateToggleUI() {
-  el.btnToggleSound.textContent = settings.sound ? "🔊" : "🔇";
-  el.btnToggleVibrate.textContent = settings.vibrate ? "📳" : "📴";
+  el.btnToggleSound.textContent = settings.sound ? "音效 🔊" : "音效 🔇";
+  el.btnToggleVibrate.textContent = settings.vibrate ? "振動 📳" : "振動 📴";
   el.btnToggleSound.classList.toggle("off", !settings.sound);
   el.btnToggleVibrate.classList.toggle("off", !settings.vibrate);
   el.btnToggleAuto.classList.toggle("off", !settings.autoElim);

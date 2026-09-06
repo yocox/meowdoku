@@ -241,8 +241,7 @@ h2 {
     var(--edge-r, 0 0 #0000),
     var(--edge-b, 0 0 #0000),
     var(--edge-l, 0 0 #0000),
-    /* inset 0 0 0 1px rgba(32, 33, 36, 0.13); */
-    inset 0 0 0 2px rgba(32, 33, 36, 1);
+    inset 0 0 0 1px rgba(32, 33, 36, 0.13);
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
@@ -250,19 +249,19 @@ h2 {
 }
 
 .cell.edge-t {
-  --edge-t: inset 0 4px 0 #202124;
+  --edge-t: inset 0 2px 0 #202124;
 }
 
 .cell.edge-r {
-  --edge-r: inset -4px 0 0 #202124;
+  --edge-r: inset -2px 0 0 #202124;
 }
 
 .cell.edge-b {
-  --edge-b: inset 0 -4px 0 #202124;
+  --edge-b: inset 0 -2px 0 #202124;
 }
 
 .cell.edge-l {
-  --edge-l: inset 4px 0 0 #202124;
+  --edge-l: inset 2px 0 0 #202124;
 }
 
 /* Round a corner only where two region edges meet (a region's convex corner).

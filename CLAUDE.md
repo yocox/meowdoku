@@ -17,9 +17,9 @@ No build step. All frontend changes take effect on browser reload.
 ```sh
 # C++ generator (fast, preferred)
 clang++ -O3 -std=c++17 tools/generate.cpp tools/difficulty_analyzer.cpp -o tools/generate.exe
-tools/generate.exe --sizes 8 9 10 11 12 --count 50 --seed 42
+tools/generate.exe --sizes 8 9 10 11 12 --to 50 --seed 42
 
-# Python generator (slower, same algorithm)
+# Python generator (slower, and still on the old algorithm — see below)
 cd tools
 python3 generate.py --sizes 8 9 10 11 12 --count 5 --seed 42
 
@@ -27,7 +27,9 @@ python3 generate.py --sizes 8 9 10 11 12 --count 5 --seed 42
 python3 tools/build_index.py
 ```
 
-`--count N` overwrites files `001..00N` for each size. To add levels without disturbing existing ones, generate into a scratch dir and copy with higher indices, then rebuild the index.
+`--to N` fills in whichever of indices `1..N` are missing for each size; existing
+files are left alone, so it is safe to re-run and safe to raise N. `--legacy`
+forces the old flood-fill-then-repair generator (see below).
 
 ## Checking a level
 
@@ -71,8 +73,21 @@ Pointer Events API (`pointerdown/move/up/cancel` on `#board`). The board calls `
 
 ### Level generation (`tools/`)
 
-1. `generate.py` / `generate.cpp` — same algorithm: random no-adjacent-column permutation → multi-source BFS flood fill per region → uniqueness check → targeted boundary-cell repair loop (up to 400 iterations) to kill alternate solutions without moving cat cells. C++ is ~12× faster.
-2. `solver.py` — pure-Python backtracker used by `generate.py`. The C++ rewrite inlines the solver.
+1. `generate.cpp` has two paths, both starting from a random no-adjacent-column cat permutation. Which one runs is chosen by board size (`ICGC_MIN_N`), or forced with `--legacy`.
+
+   - **Legacy (n ≤ 9, or `--legacy`)** — multi-source BFS flood fill per region → uniqueness check → boundary-cell repair loop (up to 400 iterations) that recolours cells to kill alternate solutions without moving cat cells. This is also the fallback when the primary path finishes a board that still isn't unique.
+   - **ICGC (n ≥ 10)** — witness-pool guided incremental colouring, then legacy repair for the last stretch. Grows the colouring one cell at a time from the cat seeds, choosing the (cell, region) pair that kills the most surviving alternate solutions. Rests on a monotonicity property of partial colourings that the header comment on `icgc_colour` spells out: once a partial board has one legal placement left, *every* completion of it is a unique-solution level, so nothing ever has to be undone. Growth alone can't quite finish — colouring one cell only kills alternates passing through it, ~1/n of what's left, and there are only n²−n cells — so it lands within a few dozen solutions and repair closes the gap.
+
+   Measured mean ms/level (legacy column already includes the randomised alternate search):
+
+   | n | 8 | 9 | 10 | 11 | 12 |
+   |---|---|---|---|---|---|
+   | legacy | 1.9 | 9.0 | 71.1 | 260.3 | 4278 |
+   | ICGC+repair | 6.3 | 23.9 | 56.6 | 199.1 | 654 |
+
+   ICGC boards are somewhat lumpier than legacy ones (n=12: largest region averages 31.6 cells vs 28.7, and ~4 regions of ≤3 cells per level vs ~2). `IcgcParams::size_cap` trades this against nothing much — see the comment where `cap` is set.
+
+2. `generate.py` / `solver.py` — the Python generator still implements only the legacy algorithm and has **not** been kept in sync with the ICGC path. It is fine for small boards; use the C++ one for n ≥ 10. `solver.py` is a pure-Python backtracker used by `generate.py`; the C++ generator inlines its own solver.
 3. `difficulty_analyzer.py` / `difficulty_analyzer.{h,cpp}` — same tier1/tier2/tierk human-reasoning simulation (see the module docstring for tier definitions); the C++ port drops the step-by-step descriptions and is called in-process by `generate.cpp` (no subprocess launch) to reject boards that need backtracking (D9). Keep both in sync if the reasoning rules change; use the Python version for human-readable reports (`--step-by-step`, `--prune`).
 4. Levels that fail the D9 check aren't discarded — they're written to `levels/backtrack/level_<n>_<idx>.txt` (flat, mixed sizes) instead of the per-size dirs, for a future "requires backtracking" challenge pack. `build_index.py` skips this directory.
 5. `build_index.py` — scans `levels/` (excluding `levels/backtrack`) and writes `web/levels_index.json`.

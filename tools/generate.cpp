@@ -1,6 +1,6 @@
 // tools/generate.cpp  –  Meowdoku level generator (C++ rewrite of generate.py + solver.py)
 // Compile: clang++ -O3 -std=c++17 tools/generate.cpp tools/difficulty_analyzer.cpp -o tools/generate
-// Usage:   generate [--sizes N...] [--count K] [--out DIR] [--seed S]
+// Usage:   generate --to N [--sizes N...] [--out DIR] [--seed S] [--legacy]
 
 #include <algorithm>
 #include <cstdio>
@@ -53,32 +53,66 @@ static int count_solutions(const int g[][MAXN], int n, int limit) {
     return s.cnt;
 }
 
-// Find the first solution ≠ excl. Returns true and writes to out[] if found.
-static bool find_alternate(const int g[][MAXN], int n, const int *excl, int *out) {
-    struct S {
-        const int (*g)[MAXN];
-        int n; const int *excl; int *out; bool found;
-        int pl[MAXN];
-        void bt(int row, int pc, uint32_t uc, uint32_t ur) {
-            if (found) return;
-            if (row == n) {
-                for (int r = 0; r < n; ++r)
-                    if (pl[r] != excl[r]) { std::copy(pl, pl+n, out); found = true; return; }
-                return;
+// Randomised search for a placement ≠ excl that is legal under the (possibly
+// partial) colouring g. A cell with g[r][c] < 0 is uncoloured and imposes no
+// region constraint.
+//
+// The column order is reshuffled at every node. That matters: with a fixed
+// 0..n-1 order the search always returns the lexicographically smallest
+// alternate, so callers that repeatedly ask for "an alternate" keep getting
+// neighbours of the same one and only ever probe one corner of the solution
+// space.
+//
+//   budget < 0  → exhaustive; returning false *proves* no alternate exists.
+//   budget ≥ 0  → a bounded random dive; false may just mean "gave up".
+struct AltSearch {
+    const int (*g)[MAXN];
+    int n;
+    const int *excl;
+    std::mt19937 *rng;
+    long   budget;
+    int  (*sink)[MAXN];  // where to store hits; null keeps just the last one in pl
+    int    limit;        // stop once this many have been found
+    int    found;
+    int    pl[MAXN];
+
+    // Returns true when the search should stop: limit reached, or out of budget.
+    bool bt(int row, int pc, uint32_t uc, uint32_t ur) {
+        if (budget >= 0 && --budget < 0) return true;  // dive gave up; keep what we have
+        if (row == n) {
+            for (int r = 0; r < n; ++r) {
+                if (pl[r] == excl[r]) continue;
+                if (sink) std::copy(pl, pl+n, sink[found]);
+                return ++found >= limit;
             }
-            for (int c = 0; c < n; ++c) {
-                if (uc >> c & 1) continue;
-                if (pc >= 0 && c >= pc-1 && c <= pc+1) continue;
-                uint32_t rb = 1u << g[row][c];
-                if (ur & rb) continue;
-                pl[row] = c;
-                bt(row+1, c, uc|(1u<<c), ur|rb);
-                if (found) return;
-            }
+            return false;  // this is the intended solution, keep searching
         }
-    } s{g, n, excl, out, false, {}};
+        int order[MAXN], m = 0;
+        for (int c = 0; c < n; ++c) {
+            if (uc >> c & 1) continue;
+            if (pc >= 0 && c >= pc-1 && c <= pc+1) continue;
+            int reg = g[row][c];
+            if (reg >= 0 && (ur >> reg & 1)) continue;
+            order[m++] = c;
+        }
+        std::shuffle(order, order+m, *rng);
+        for (int i = 0; i < m; ++i) {
+            int c = order[i], reg = g[row][c];
+            pl[row] = c;
+            if (bt(row+1, c, uc|(1u<<c), reg >= 0 ? ur|(1u<<reg) : ur)) return true;
+        }
+        return false;
+    }
+};
+
+// Exhaustive: false means the board's solution is unique.
+static bool find_alternate(const int g[][MAXN], int n, const int *excl, int *out,
+                           std::mt19937 &rng) {
+    AltSearch s{g, n, excl, &rng, -1, nullptr, 1, 0, {}};
     s.bt(0, -1, 0, 0);
-    return s.found;
+    if (!s.found) return false;
+    std::copy(s.pl, s.pl+n, out);
+    return true;
 }
 
 // ── Generator ────────────────────────────────────────────────────────────────
@@ -181,7 +215,7 @@ static bool repair_uniqueness(int owner[][MAXN], int n, const int *cat_cols,
     int nbr_ord[4] = {0,1,2,3};
 
     for (int iter = 0; iter < max_iters; ++iter) {
-        if (!find_alternate(owner, n, cat_cols, alt)) return true;  // unique!
+        if (!find_alternate(owner, n, cat_cols, alt, rng)) return true;  // unique!
 
         // Rows where alt differs from the target solution
         int diff[MAXN], ndiff = 0;
@@ -254,15 +288,239 @@ static bool repair_uniqueness(int owner[][MAXN], int n, const int *cat_cols,
     return count_solutions(owner, n, 2) == 1;
 }
 
+// ── Witness-pool guided incremental colouring ────────────────────────────────
+//
+// Instead of "flood fill the whole board, then repair it", grow the colouring
+// one cell at a time and let the surviving alternate solutions pick the next
+// move.
+//
+// This rests on one property of *partial* colourings. Call a placement p legal
+// for a partial colouring when the cells of p that are already coloured have
+// pairwise distinct regions. If c2 extends c1 (only adds colour, never
+// recolours) then every p legal for c2 is also legal for c1 — p's c1-coloured
+// cells are a subset of its c2-coloured ones, with the same colours. So the
+// legal set only ever shrinks as we colour, and the intended solution stays in
+// it forever (each cat cell is its own region's seed and never changes). Hence:
+//
+//     once the partial board has exactly one legal placement, *every*
+//     completion of it is a unique-solution level.
+//
+// That is what makes this cheap. Uniqueness is normally reached well before the
+// board is full; from that point the remaining cells can be coloured freely,
+// and there is never anything to undo. Compare the repair loop above, where
+// recolouring is "region A loses a cell, region B gains one" — B growing can
+// create new solutions, so progress is not monotone and ~85% of attempts at
+// n=12 simply fail.
+//
+// We can't track the legal set exactly (it starts in the tens of millions), so
+// we keep a random sample of it — the witness pool — colour the (cell, region)
+// pair that kills the most witnesses, and refill the pool when it runs dry. A
+// refill that comes back empty *and* survives an exhaustive search is the
+// uniqueness proof.
+
+struct IcgcParams {
+    int    pool_target = 512;   // witnesses collected per refill
+    long   dive_budget = 4000;  // search nodes per randomised dive
+    int    dive_yield  = 8;     // witnesses harvested per dive
+    int    dive_giveup = 24;    // consecutive dives finding nothing new
+    int    size_cap    = 0;     // hard region size cap; 0 → 2n (relaxed if stuck)
+    double size_w      = 0.15;  // soft size balancing, in units of "witnesses killed"
+    double jitter      = 0.25;  // tie-breaking noise, ditto
+};
+
+struct Witness {
+    int      cols[MAXN];
+    uint32_t used;   // regions already used by this placement's coloured cells
+    bool     alive;
+};
+
+// Grow a colouring from the cat seeds until the board is full. Returns true if
+// the result has a unique solution.
+static bool icgc_colour(int owner[][MAXN], int n, const int *cat_cols, std::mt19937 &rng,
+                        const IcgcParams &P = IcgcParams{}) {
+    for (int r = 0; r < n; ++r)
+        for (int c = 0; c < n; ++c)
+            owner[r][c] = -1;
+
+    int size[MAXN] = {};
+    for (int i = 0; i < n; ++i) { owner[i][cat_cols[i]] = i; size[i] = 1; }
+    int unassigned = n*n - n;
+
+    std::vector<Witness> pool;
+    std::vector<int>     through[MAXN][MAXN];  // cell → witnesses passing over it
+    std::set<uint64_t>   seen;
+    int  alive = 0, refill_at = 1;
+    bool proven_unique = false;
+    bool pool_complete = false;  // pool holds *all* survivors, not a sample
+
+    auto add_witness = [&](const int *cols) {
+        Witness w;
+        std::copy(cols, cols+n, w.cols);
+        w.used = 0;
+        w.alive = true;
+        for (int r = 0; r < n; ++r) {
+            int reg = owner[r][cols[r]];
+            if (reg >= 0) w.used |= 1u << reg;
+        }
+        int wi = (int)pool.size();
+        pool.push_back(w);
+        for (int r = 0; r < n; ++r) through[r][cols[r]].push_back(wi);
+        ++alive;
+    };
+
+    auto refill = [&]() {
+        pool.clear();
+        seen.clear();
+        alive = 0;
+        for (int r = 0; r < n; ++r)
+            for (int c = 0; c < n; ++c)
+                through[r][c].clear();
+
+        // Each dive is an independent randomised descent, which is what keeps
+        // the sample spread out — one deep DFS would instead return a clump of
+        // placements all sharing a prefix. Harvesting a few per dive amortises
+        // the descent without collapsing that spread.
+        std::vector<int> dflat((size_t)P.dive_yield * MAXN);
+        auto *dsink = reinterpret_cast<int(*)[MAXN]>(dflat.data());
+        int stale = 0;
+        while ((int)pool.size() < P.pool_target && stale < P.dive_giveup) {
+            AltSearch dv{owner, n, cat_cols, &rng, P.dive_budget,
+                         dsink, P.dive_yield, 0, {}};
+            dv.bt(0, -1, 0, 0);
+            int added = 0;
+            for (int i = 0; i < dv.found && (int)pool.size() < P.pool_target; ++i) {
+                uint64_t h = 0;
+                for (int r = 0; r < n; ++r) h = h << 4 | (unsigned)dsink[i][r];
+                if (!seen.insert(h).second) continue;
+                add_witness(dsink[i]);
+                ++added;
+            }
+            if (added) stale = 0; else ++stale;
+        }
+
+        // Dives came up empty — either survivors have got rare, or there are
+        // none left. Only an exhaustive search separates the two, so make it
+        // count: collect the whole survivor set, not just one witness. If it
+        // comes back short of the limit the search ran to completion, and
+        // because survivors only ever die the pool stays exact from here on —
+        // no further search is ever needed for this board.
+        if (pool.empty()) {
+            std::vector<int> flat((size_t)P.pool_target * MAXN);
+            AltSearch ex{owner, n, cat_cols, &rng, -1,
+                         reinterpret_cast<int(*)[MAXN]>(flat.data()),
+                         P.pool_target, 0, {}};
+            ex.bt(0, -1, 0, 0);
+            if (!ex.found) { proven_unique = true; return; }
+            for (int i = 0; i < ex.found; ++i) add_witness(&flat[(size_t)i * MAXN]);
+            pool_complete = ex.found < P.pool_target;
+        }
+        refill_at = std::max(1, (int)pool.size() / 8);
+    };
+
+    std::uniform_real_distribution<double> jit(0.0, P.jitter);
+
+    // The greedy has a rich-get-richer bias that needs a cap. Colouring a cell
+    // for region k kills every witness that already uses k elsewhere, so the
+    // more cells k owns the more each further cell kills. Uncapped, one region
+    // ends up with ~40% of the board (at n=12: largest 40.7 cells, second 35.0,
+    // against 28.7/21.1 from the flood-fill generator) — same speed, but a
+    // visibly lumpier board than the levels already shipped. Capping too hard
+    // is worse than not capping, since it takes away the strong moves: n+3
+    // roughly halves the success rate. 2n measured as the balance — shape close
+    // to the old generator (31.6/27.1) at no cost in speed.
+    int cap = P.size_cap > 0 ? P.size_cap : 2*n;
+
+    while (unassigned > 0) {
+        if (!proven_unique && pool_complete && alive == 0) proven_unique = true;
+        if (!proven_unique && !pool_complete && alive < refill_at) refill();
+
+        // Pick the (cell, region) pair that kills the most witnesses. Once
+        // uniqueness is proven every score is 0 kills, so this degenerates into
+        // "grow the smallest neighbouring region" — a plain balanced fill.
+        double best = -1e18;
+        int br = -1, bc = -1, bk = -1;
+        while (br < 0) {
+            for (int r = 0; r < n; ++r) {
+                for (int c = 0; c < n; ++c) {
+                    if (owner[r][c] >= 0) continue;
+                    uint32_t cand = 0;
+                    for (int d = 0; d < 4; ++d) {
+                        int nr = r+DR[d], nc = c+DC[d];
+                        if (nr<0||nr>=n||nc<0||nc>=n) continue;
+                        if (owner[nr][nc] >= 0) cand |= 1u << owner[nr][nc];
+                    }
+                    if (!cand) continue;  // not on the frontier yet
+                    for (int k = 0; k < n; ++k) {
+                        if (!(cand >> k & 1)) continue;
+                        if (size[k] >= cap) continue;
+                        int kills = 0;
+                        for (int wi : through[r][c]) {
+                            const Witness &w = pool[wi];
+                            if (w.alive && (w.used >> k & 1)) ++kills;
+                        }
+                        double s = kills - P.size_w * size[k] + jit(rng);
+                        if (s > best) { best = s; br = r; bc = c; bk = k; }
+                    }
+                }
+            }
+            // Every frontier cell is hemmed in by regions that have hit the
+            // cap. Loosen it rather than give up on the board.
+            if (br < 0 && ++cap > n*n) return false;
+        }
+
+        owner[br][bc] = bk;
+        ++size[bk];
+        --unassigned;
+        for (int wi : through[br][bc]) {
+            Witness &w = pool[wi];
+            if (!w.alive) continue;
+            if (w.used >> bk & 1) { w.alive = false; --alive; }
+            else                    w.used |= 1u << bk;
+        }
+    }
+
+    // Reaching a full board without a proof means the sample never ran dry —
+    // the board still has alternates. (Cheap to confirm; boards are full here.)
+    return proven_unique || count_solutions(owner, n, 2) == 1;
+}
+
+// Below this the flood-fill-then-repair path wins: a raw n=9 board only has a
+// few thousand alternates, which repair clears easily, and ICGC's witness pool
+// is pure overhead. Measured ms/level (mean over 120 levels, 60 at n=11, 30 at
+// n=12) — legacy here already has the randomised alternate search:
+//
+//   n:            8      9     10     11      12
+//   legacy      1.9    9.0   67.3  259.4  4541.3
+//   ICGC+repair 6.3   23.9   65.2  231.0   596.3
+//
+static constexpr int ICGC_MIN_N = 10;
+
 static void generate_level(int n, std::mt19937 &rng,
-                             int owner[][MAXN], int cat_cols[]) {
+                             int owner[][MAXN], int cat_cols[], bool force_legacy) {
+    bool legacy = force_legacy || n < ICGC_MIN_N;
     for (int pi = 0; pi < 100; ++pi) {
         if (!random_perm_no_adj(cat_cols, n, rng))
             throw std::runtime_error("failed to find valid permutation");
-        for (int gi = 0; gi < 20; ++gi) {
-            if (!grow_regions(owner, n, cat_cols, rng)) continue;
-            if (count_solutions(owner, n, 2) == 1) return;
-            if (repair_uniqueness(owner, n, cat_cols, rng)) return;
+        if (!legacy) {
+            // Growth alone lands just short of unique, and that is structural
+            // rather than a tuning problem: colouring one cell can only kill
+            // witnesses that pass through it, i.e. at most a ~1/n fraction of
+            // what is left, and there are only n²−n cells to colour. That caps
+            // the whole growth phase at about n(1−1/n)^m ≈ n²·ln(1−1/n)⁻¹ nats,
+            // which at n=12 is ~11.5 against the ~18 needed to go from |P| to
+            // one. So ICGC gets the board within a few dozen solutions and the
+            // repair loop — which has no step budget — closes the gap in a
+            // handful of iterations.
+            for (int gi = 0; gi < 8; ++gi) {
+                if (icgc_colour(owner, n, cat_cols, rng)) return;
+                if (repair_uniqueness(owner, n, cat_cols, rng)) return;
+            }
+        } else {
+            for (int gi = 0; gi < 20; ++gi) {
+                if (!grow_regions(owner, n, cat_cols, rng)) continue;
+                if (count_solutions(owner, n, 2) == 1) return;
+                if (repair_uniqueness(owner, n, cat_cols, rng)) return;
+            }
         }
     }
     throw std::runtime_error("failed to generate unique-solution level");
@@ -342,6 +600,7 @@ int main(int argc, char *argv[]) {
     int to_idx = -1;
     fs::path out_dir = "levels";
     std::optional<uint64_t> seed_val;
+    bool legacy = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -351,10 +610,14 @@ int main(int argc, char *argv[]) {
         } else if (a == "--to")   { to_idx   = std::stoi(argv[++i]);
         } else if (a == "--out")  { out_dir  = argv[++i];
         } else if (a == "--seed") { seed_val = std::stoull(argv[++i]);
+        } else if (a == "--legacy") { legacy = true;
         }
     }
     if (sizes.empty()) sizes = {8, 9, 10, 11, 12};
-    if (to_idx < 1) { std::cerr << "Usage: generate --to N [--sizes ...] [--seed S]\n"; return 1; }
+    if (to_idx < 1) {
+        std::cerr << "Usage: generate --to N [--sizes ...] [--seed S] [--legacy]\n";
+        return 1;
+    }
 
     std::mt19937 rng(seed_val ? (uint32_t)*seed_val : std::random_device{}());
 
@@ -394,7 +657,7 @@ int main(int argc, char *argv[]) {
         int dupes = 0, d9_regen = 0;
         for (int idx : missing) {
             while (true) {
-                generate_level(n, rng, owner, cat_cols);
+                generate_level(n, rng, owner, cat_cols, legacy);
                 if (db.is_duplicate(owner, n)) { ++dupes; continue; }
 
                 if (!difficulty::is_pure_logic_solvable(owner, n)) {

@@ -1,18 +1,50 @@
 "use strict";
 
+// Palette from github.com/LexSong/meowdoku-extension. It is two rings of six:
+// a light and a dark version of the same six hues (粉 橘 黃 青 藍 紫).
+//
+// The order below looks shuffled but is not — it is the ring order permuted by
+// slot = (regionId * 7) % 12, baked in. Regions are handed out in order, so
+// consecutive ids would otherwise land on neighbouring hues, the hardest pair
+// to tell apart side by side. A stride of 7 is coprime with 12, so every slot
+// is still used exactly once while consecutive ids always land 5 slots apart —
+// the widest separation a 12-colour cycle allows. Re-sorting this list back
+// into hue order would silently destroy that, so don't.
 const REGION_COLORS = [
-  "#EDB9B9",  // 粉紅
-  "#B88357",  // 棕色
-  "#EAB226",  // 黃色
-  "#CCDCB3",  // 米黃
-  "#68B685",  // 暗綠
-  "#00FFA2",  // 亮綠
-  "#8CADBB",  // 藍灰
-  "#5889C3",  // 藍色
-  "#3B48BA",  // 深藍
-  "#BDA9D0",  // 粉紫
-  "#AD59BA",  // 紫色
-  "#C71370",  // 桃紅
+  "#FF9CA9",  // 亮粉
+  "#A45C1D",  // 暗橘
+  "#BDC567",  // 亮黃
+  "#00865C",  // 暗青
+  "#61CBFB",  // 亮藍
+  "#7A60AD",  // 暗紫
+  "#AB505E",  // 暗粉
+  "#F5AA6B",  // 亮橘
+  "#777600",  // 暗黃
+  "#56D6BC",  // 亮青
+  "#007AAD",  // 暗藍
+  "#C7ACFF",  // 亮紫
+];
+
+// Same twelve, dimmed for crossed-out cells: OKLab lightness ×0.7, chroma ×0.5.
+// Scaling in OKLab rather than with `filter: brightness() saturate()` matters —
+// that filter works in sRGB, which washes the light ring out to a flat grey
+// instead of a dimmer version of itself. OKLab's separate lightness and chroma
+// axes keep the hue, so a crossed-out cell still reads as its own region.
+// Precomputed because the input is a fixed list; see the extension's restyle.js
+// for the conversion.
+const REGION_COLORS_DIM = [
+  "#93666B",  // 亮粉
+  "#5B3B22",  // 暗橘
+  "#74784F",  // 亮黃
+  "#214D3A",  // 暗青
+  "#4E7B91",  // 亮藍
+  "#473C5F",  // 暗紫
+  "#5F363B",  // 暗粉
+  "#8E6C50",  // 亮橘
+  "#46461E",  // 暗黃
+  "#4B8073",  // 亮青
+  "#20485F",  // 暗藍
+  "#786D92",  // 亮紫
 ];
 
 const EMPTY = 0, MARK = 1, CAT = 2, HYPO = 3, WRONG = 4;
@@ -330,7 +362,6 @@ function renderBoard() {
     for (let c = 0; c < n; c++) {
       const cellEl = document.createElement("div");
       cellEl.className = "cell";
-      cellEl.style.background = REGION_COLORS[state.regions[r][c] % REGION_COLORS.length];
       cellEl.innerHTML = '<span class="mark"><span class="bar"></span><span class="bar"></span></span>'
         + '<span class="cat-icon">🐱</span>'
         + '<span class="hypo-icon">△</span>';
@@ -342,7 +373,11 @@ function renderBoard() {
 }
 
 function updateCellView(r, c) {
-  cellEls[r][c].dataset.state = String(state.board[r][c]);
+  const st = state.board[r][c];
+  const cell = cellEls[r][c];
+  cell.dataset.state = String(st);
+  const palette = st === MARK ? REGION_COLORS_DIM : REGION_COLORS;
+  cell.style.background = palette[state.regions[r][c] % palette.length];
 }
 
 function renderHearts() {

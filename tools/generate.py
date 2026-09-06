@@ -218,9 +218,19 @@ def main():
 
     rng = random.Random(args.seed)
 
+    backtrack_dir = args.out / "backtrack"
+    backtrack_dir.mkdir(parents=True, exist_ok=True)
+
     for n in args.sizes:
         out_dir = args.out / str(n)
         out_dir.mkdir(parents=True, exist_ok=True)
+
+        bt_pat = _re.compile(rf"level_{n}_(\d+)\.txt$")
+        bt_next = 1 + max(
+            (int(m.group(1)) for p in backtrack_dir.glob(f"level_{n}_*.txt")
+             if (m := bt_pat.match(p.name))),
+            default=0,
+        )
 
         fingerprints, existing = _scan_existing(out_dir, n)
         missing = sorted(i for i in range(1, args.to + 1) if i not in existing)
@@ -239,12 +249,17 @@ def main():
                     dupes += 1
                     continue
 
-                path = out_dir / f"level_{n}_{idx:03d}.txt"
+                path = out_dir / f"level_{n}_{idx:08d}.txt"
                 path.write_text(format_level(n, regions, solution))
 
                 result = _analyze(path)
                 if 9 in result["histogram"] or not result["solved"]:
-                    path.unlink()
+                    # Can't be solved by pure logical deduction. Don't throw it
+                    # away -- stash it in levels/backtrack for a future
+                    # "backtracking required" challenge pack.
+                    bt_path = backtrack_dir / f"level_{n}_{bt_next:08d}.txt"
+                    bt_next += 1
+                    path.replace(bt_path)
                     d9_regen += 1
                     continue
 
@@ -253,7 +268,7 @@ def main():
                 break
 
         if dupes:    print(f"  ({dupes} duplicate(s) skipped for n={n})")
-        if d9_regen: print(f"  ({d9_regen} D9 level(s) regenerated for n={n})")
+        if d9_regen: print(f"  ({d9_regen} D9 level(s) moved to levels/backtrack for n={n})")
 
 
 if __name__ == "__main__":

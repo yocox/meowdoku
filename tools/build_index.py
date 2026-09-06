@@ -22,6 +22,10 @@ def main():
     for size_dir in sorted(LEVELS_DIR.iterdir()):
         if not size_dir.is_dir():
             continue
+        if size_dir.name == "backtrack":
+            # Levels that need backtracking, not pure logic -- not yet
+            # surfaced as a normal size bucket. See levels/backtrack.
+            continue
         indices = []
         for path in size_dir.glob("level_*.txt"):
             m = PATTERN.match(path.name)

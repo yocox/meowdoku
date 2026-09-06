@@ -351,12 +351,28 @@ int main(int argc, char *argv[]) {
     int owner[MAXN][MAXN];
     int cat_cols[MAXN];
 
+    fs::path backtrack_dir = out_dir / "backtrack";
+    fs::create_directories(backtrack_dir);
+
     for (int n : sizes) {
         fs::path lvl_dir = out_dir / std::to_string(n);
         fs::create_directories(lvl_dir);
 
         LevelDB db;
         db.load(lvl_dir, n);
+
+        // Find the next free index for this size in levels/backtrack (flat
+        // dir shared across sizes), so rejected candidates don't overwrite
+        // each other or previously-saved ones.
+        std::string bt_prefix = "level_" + std::to_string(n) + "_";
+        int bt_next = 1;
+        for (auto &e : fs::directory_iterator(backtrack_dir)) {
+            std::string fname = e.path().filename().string();
+            if (fname.compare(0, bt_prefix.size(), bt_prefix) != 0) continue;
+            std::string num = fname.substr(bt_prefix.size(),
+                                            fname.size() - bt_prefix.size() - 4 /* ".txt" */);
+            try { bt_next = std::max(bt_next, std::stoi(num) + 1); } catch (...) {}
+        }
 
         std::vector<int> missing = db.missing_up_to(to_idx);
         if (missing.empty()) {
@@ -372,7 +388,7 @@ int main(int argc, char *argv[]) {
                 if (db.is_duplicate(owner, n)) { ++dupes; continue; }
 
                 char fname[32];
-                std::snprintf(fname, sizeof(fname), "level_%d_%03d.txt", n, idx);
+                std::snprintf(fname, sizeof(fname), "level_%d_%08d.txt", n, idx);
                 fs::path path = lvl_dir / fname;
 
                 { // write candidate
@@ -391,7 +407,12 @@ int main(int argc, char *argv[]) {
                 std::string cmd = "python \"" + analyzer.string()
                                 + "\" --check \"" + path.string() + "\" > nul 2>&1";
                 if (std::system(cmd.c_str()) != 0) {
-                    fs::remove(path);
+                    // Can't be solved by pure logical deduction. Don't throw it
+                    // away — stash it in levels/backtrack for a future
+                    // "backtracking required" challenge pack.
+                    char bt_fname[32];
+                    std::snprintf(bt_fname, sizeof(bt_fname), "level_%d_%08d.txt", n, bt_next++);
+                    fs::rename(path, backtrack_dir / bt_fname);
                     ++d9_regen;
                     continue;
                 }
@@ -402,7 +423,7 @@ int main(int argc, char *argv[]) {
             }
         }
         if (dupes)    std::cout << "  (" << dupes    << " duplicate(s) skipped)\n";
-        if (d9_regen) std::cout << "  (" << d9_regen << " D9 level(s) regenerated)\n";
+        if (d9_regen) std::cout << "  (" << d9_regen << " D9 level(s) moved to levels/backtrack)\n";
     }
     return 0;
 }

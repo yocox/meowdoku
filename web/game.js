@@ -295,7 +295,7 @@ function refreshDoneMarks() {
 }
 
 async function startLevel(n, idx) {
-  const path = `levels/${n}/level_${n}_${String(idx).padStart(3, "0")}.txt`;
+  const path = `levels/${n}/level_${n}_${String(idx).padStart(8, "0")}.txt`;
   const res = await fetch(path);
   const text = await res.text();
   const { regions, solution } = parseLevel(text);

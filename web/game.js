@@ -1,36 +1,19 @@
 "use strict";
 
-const REGION_COLORS_1 = [
-  "#FFB9B9",  // 粉紅
-  "#B88377",  // 棕色
+const REGION_COLORS = [
+  "#EDB9B9",  // 粉紅
+  "#B88357",  // 棕色
   "#EAB226",  // 黃色
   "#CCDCB3",  // 米黃
   "#68B685",  // 暗綠
   "#00FFA2",  // 亮綠
   "#8CADBB",  // 藍灰
   "#5889C3",  // 藍色
-  "#5B68BA",  // 深藍
+  "#3B48BA",  // 深藍
   "#BDA9D0",  // 粉紫
   "#AD59BA",  // 紫色
-  "#D13B89",  // 桃紅
+  "#C71370",  // 桃紅
 ];
-
-const REGION_COLORS_2 = [
-  "#E6194B", // 強烈紅 (Red)
-  "#3CB44B", // 鮮綠色 (Green)
-  "#FFE119", // 金黃色 (Yellow)
-  "#0082C8", // 皇家藍 (Blue)
-  "#F58231", // 亮橘色 (Orange)
-  "#911D91", // 深紫色 (Purple)
-  "#BFEF45", // 霓虹綠 (Lime)
-  "#42D4F4", // 亮青色 (Cyan)
-  "#469990", // 深青綠 (Teal)
-  "#9A6324", // 咖啡色 (Brown)
-  "#E6BEFF", // 薰衣草 (Lavender)
-  "#808000", // 橄欖綠 (Olive)
-];
-
-const REGION_COLORS = REGION_COLORS_1;
 
 const EMPTY = 0, MARK = 1, CAT = 2, HYPO = 3, WRONG = 4;
 const HEARTS_MAX = 3;
@@ -162,8 +145,8 @@ function vibrate(ms) { if (settings.vibrate && navigator.vibrate) navigator.vibr
 let cellEls = [];
 
 function updateToggleUI() {
-  el.btnToggleSound.textContent = settings.sound ? "🔊音效" : "🔇音效";
-  el.btnToggleVibrate.textContent = settings.vibrate ? "📳振動" : "📴振動";
+  el.btnToggleSound.textContent = settings.sound ? "🔊" : "🔇";
+  el.btnToggleVibrate.textContent = settings.vibrate ? "📳" : "📴";
   el.btnToggleSound.classList.toggle("off", !settings.sound);
   el.btnToggleVibrate.classList.toggle("off", !settings.vibrate);
   el.btnToggleAuto.classList.toggle("off", !settings.autoElim);
@@ -346,18 +329,8 @@ function renderBoard() {
   for (let r = 0; r < n; r++) {
     for (let c = 0; c < n; c++) {
       const cellEl = document.createElement("div");
-      // Mark each side that borders a different region (or the board edge) so
-      // CSS can outline every region as a single shape — colour alone is not
-      // enough to separate 12 regions reliably.
-      const reg = state.regions[r][c];
-      const isEdge = (rr, cc) =>
-        rr < 0 || cc < 0 || rr >= n || cc >= n || state.regions[rr][cc] !== reg;
-      cellEl.className = "cell"
-        + (isEdge(r - 1, c) ? " edge-t" : "")
-        + (isEdge(r, c + 1) ? " edge-r" : "")
-        + (isEdge(r + 1, c) ? " edge-b" : "")
-        + (isEdge(r, c - 1) ? " edge-l" : "");
-      cellEl.style.background = REGION_COLORS[reg % REGION_COLORS.length];
+      cellEl.className = "cell";
+      cellEl.style.background = REGION_COLORS[state.regions[r][c] % REGION_COLORS.length];
       cellEl.innerHTML = '<span class="mark"><span class="bar"></span><span class="bar"></span></span>'
         + '<span class="cat-icon">🐱</span>'
         + '<span class="hypo-icon">△</span>';

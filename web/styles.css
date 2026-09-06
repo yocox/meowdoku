@@ -211,7 +211,7 @@ h2 {
 
 .board {
   display: grid;
-  gap: 0;
+  gap: 4px;
   width: 100%;
   aspect-ratio: 1 / 1;
   touch-action: none;
@@ -229,57 +229,11 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0;
-  /* Region separation is painted as inset bars, not borders. A border miters its
-     corners diagonally, so where an opaque side meets a faint one it bites a
-     light notch out of the boundary; a bar spans the whole edge and never does.
-     Shadows also stay out of layout, keeping the content box — and so the `cqw`
-     icon sizing — identical in every cell. The last bar is the intra-region
-     grid line: uniform on all four sides, and hidden under any dark bar. */
-  box-shadow:
-    var(--edge-t, 0 0 #0000),
-    var(--edge-r, 0 0 #0000),
-    var(--edge-b, 0 0 #0000),
-    var(--edge-l, 0 0 #0000),
-    inset 0 0 0 1px rgba(32, 33, 36, 0.13);
+  border-radius: 10px;
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
-}
-
-.cell.edge-t {
-  --edge-t: inset 0 2px 0 #202124;
-}
-
-.cell.edge-r {
-  --edge-r: inset -2px 0 0 #202124;
-}
-
-.cell.edge-b {
-  --edge-b: inset 0 -2px 0 #202124;
-}
-
-.cell.edge-l {
-  --edge-l: inset 2px 0 0 #202124;
-}
-
-/* Round a corner only where two region edges meet (a region's convex corner).
-   Concave corners stay square — CSS cannot curve them outward. */
-.cell.edge-t.edge-l {
-  border-top-left-radius: 11px;
-}
-
-.cell.edge-t.edge-r {
-  border-top-right-radius: 11px;
-}
-
-.cell.edge-b.edge-l {
-  border-bottom-left-radius: 11px;
-}
-
-.cell.edge-b.edge-r {
-  border-bottom-right-radius: 11px;
 }
 
 .cell .cat-icon {
@@ -345,7 +299,7 @@ h2 {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: inherit;
+  border-radius: 10px;
   pointer-events: none;
 }
 
@@ -361,7 +315,7 @@ h2 {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: inherit;
+  border-radius: 10px;
   box-shadow: inset 0 0 0 3px #dc2626;
   background: rgba(220, 38, 38, 0.12);
   pointer-events: none;

@@ -8,6 +8,7 @@ per color region.
 
 - `web/` — static HTML/CSS/JS. Just serve the folder, no build step.
 - `levels/<n>/level_<n>_<idx>.txt` — level data, one text file per level.
+- `levels/bundle/` — generated browser bundles and their content-hash manifest.
 - `tools/` — Python level generator + solver, used offline (not shipped
   to the browser).
 
@@ -45,7 +46,7 @@ HHHHHGGD
 ```sh
 cd tools
 python3 generate.py --sizes 8 9 10 11 12 --count 5 --seed 42
-python3 build_index.py   # refresh web/levels_index.json
+python3 build_levelsbundles.py   # refresh levels/bundle/*.json
 ```
 
 `generate.py`:
@@ -72,8 +73,9 @@ Notes:
   bigger board needs more targeted-repair iterations to reach a unique
   solution. Generating all of 8–12 at `--count 5` takes a few minutes
   total — that's expected, not a hang.
-- Always re-run `build_index.py` after generating, or the web client
-  won't see the new level count.
+- Always re-run `build_levelsbundles.py` after generating, or the web client
+  won't see the new levels. Its output is deterministic and is committed with
+  the source levels.
 
 `solver.py` also works as a standalone checker:
 

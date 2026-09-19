@@ -13,6 +13,7 @@
 <body>
   <header class="app-header">
     <h1>🐱 Meowdoku</h1>
+    <button id="btn-clear-cache" class="icon-btn" aria-label="清除快取" title="清除快取">🗑️</button>
   </header>
 
   <main id="app">
@@ -147,8 +148,26 @@
     </section>
   </main>
 
+  <div id="ios-install-modal" class="modal-overlay hidden" role="dialog" aria-modal="true"
+    aria-labelledby="ios-install-title">
+    <div class="modal-box">
+      <div class="modal-emoji">📲</div>
+      <div id="ios-install-title" class="modal-title">加入 iOS 主畫面</div>
+      <div class="modal-subtitle">在 Safari 或 Chrome 點「分享」，再選擇「加入主畫面」。</div>
+      <div class="modal-buttons">
+        <button id="btn-ios-install-ok">知道了</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden"></div>
 
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" })
+        .catch((error) => console.error("Service worker registration failed", error));
+    }
+  </script>
   <script src="game.js"></script>
 </body>
 

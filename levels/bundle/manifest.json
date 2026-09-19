@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "packs": {
+    "6": {
+      "count": 1000,
+      "file": "6.json",
+      "sha256": "0e6f93c5bd6202d2aa119102610f23045905ec0273811118808f3ec3f33065b1"
+    },
+    "7": {
+      "count": 1000,
+      "file": "7.json",
+      "sha256": "1595644c3c6e6f3e1c3e35e3ccfaf902bd203684f2658676c862218457210ece"
+    },
+    "8": {
+      "count": 1000,
+      "file": "8.json",
+      "sha256": "0f6ab8f4bf304f862de510f05a62bb567dac137ac32ff2cb36fe847239d49701"
+    },
+    "9": {
+      "count": 1000,
+      "file": "9.json",
+      "sha256": "165c1bd9b6b2300298743e2daa285889d0c018957d7e6df923e730b87e15927e"
+    },
+    "10": {
+      "count": 1000,
+      "file": "10.json",
+      "sha256": "892ee22dd0fb30a191d629982c8c80e0fff6cee515769525ded16a74654ccce1"
+    },
+    "11": {
+      "count": 1000,
+      "file": "11.json",
+      "sha256": "175aa88793492d3ed6d88b5ffdf6a962098ead0105b0fd46e3e20c92cb91855b"
+    },
+    "12": {
+      "count": 1000,
+      "file": "12.json",
+      "sha256": "d84e98eb4c74b7298f70a5fc5bdca3ff624fe503ebada54e10bb69e59ffb3f9c"
+    },
+    "bad": {
+      "count": 365,
+      "file": "bad.json",
+      "sha256": "cd8867676e1f689a526f5c7119b588b22b6cff5570d93f960e5094fbbb294715"
+    },
+    "hard": {
+      "count": 372,
+      "file": "hard.json",
+      "sha256": "9f3d9e95d55a14a3abdabaa764f6532451e43ac1736ca30a3d2b6b8cdcc80f19"
+    }
+  }
+}

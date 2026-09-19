@@ -61,6 +61,7 @@ const EMPTY = 0, MARK = 1, CAT = 2, HYPO = 3, WRONG = 4;
 const HEARTS_MAX = 3;
 const DOUBLE_TAP_MS = 300;
 const DRAG_THRESHOLD_PX = 6;
+const IOS_INSTALL_ACK_KEY = "meowdoku_ios_install_acknowledged";
 
 // ── Color math (sRGB <-> linear <-> OKLab) ──────────────────────────────────
 // Used to derive a dimmed variant of any user-chosen region color. Matrices
@@ -240,6 +241,8 @@ const PACK_HINTS = {
   hard: "純邏輯可解，但需要較進階的推理",
   bad: "無法只靠推理解開，必須猜測",
 };
+const LEVEL_BUNDLE_BASE = "levels/bundle/";
+const levelBundlePromises = new Map();
 
 function packLabel(pack) {
   return PACK_LABELS[pack] ?? `${pack} x ${pack}`;
@@ -255,6 +258,7 @@ function comparePacks(a, b) {
 
 const state = {
   packs: {},        // { "8": levelCount, ..., "hard": 372, "bad": 365 }
+  levelManifest: null,
   pack: null,       // selected pack key; board size for numeric packs, else a name
   n: null,
   levelIdx: null,
@@ -278,6 +282,7 @@ const el = {
   timer: document.getElementById("timer"),
   hearts: document.getElementById("hearts"),
   statusBanner: document.getElementById("status-banner"),
+  btnClearCache: document.getElementById("btn-clear-cache"),
   btnBack: document.getElementById("btn-back"),
   btnRestart: document.getElementById("btn-restart"),
   btnUndo: document.getElementById("btn-undo"),
@@ -310,6 +315,8 @@ const el = {
   importText: document.getElementById("import-text"),
   btnImportCancel: document.getElementById("btn-import-cancel"),
   btnImportConfirm: document.getElementById("btn-import-confirm"),
+  iosInstallModal: document.getElementById("ios-install-modal"),
+  btnIosInstallOk: document.getElementById("btn-ios-install-ok"),
 };
 
 // ── Audio ────────────────────────────────────────────────────────────────────
@@ -549,12 +556,40 @@ function closeSettings() {
   hideImportPanel();
 }
 
+function isIOSDevice() {
+  return /iPhone|iPad|iPod/.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
+function shouldShowIosInstallPrompt() {
+  const isStandalone = window.matchMedia("(display-mode: standalone)").matches
+    || navigator.standalone === true;
+  if (!isIOSDevice() || isStandalone) return false;
+  try { return localStorage.getItem(IOS_INSTALL_ACK_KEY) !== "true"; }
+  catch { return true; }
+}
+
+function preventIOSDoubleTapZoom() {
+  if (!isIOSDevice()) return;
+  let lastSingleTouchEnd = 0;
+  document.addEventListener("touchend", (event) => {
+    if (event.touches.length !== 0 || event.changedTouches.length !== 1) {
+      lastSingleTouchEnd = 0;
+      return;
+    }
+    const now = Date.now();
+    if (now - lastSingleTouchEnd <= DOUBLE_TAP_MS) event.preventDefault();
+    lastSingleTouchEnd = now;
+  }, { passive: false });
+}
+
 async function init() {
   // Bind all event listeners synchronously BEFORE any async operations so that
   // browser caching of an older JS file can never leave buttons unresponsive.
   updateToggleUI();
   renderPaletteEditor();
   updateUndoRedoButtons();
+  preventIOSDoubleTapZoom();
   try { history.replaceState({ screen: "select" }, ""); } catch { }
 
   el.btnBack.addEventListener("click", () => history.back());
@@ -584,6 +619,7 @@ async function init() {
   });
 
   el.btnSettings?.addEventListener("click", () => el.settingsModal.classList.remove("hidden"));
+  el.btnClearCache?.addEventListener("click", clearOfflineCache);
   el.btnSettingsClose?.addEventListener("click", closeSettings);
   el.settingsModal?.addEventListener("click", (e) => {
     if (e.target === el.settingsModal) closeSettings();
@@ -591,6 +627,10 @@ async function init() {
   el.btnHelpOpen?.addEventListener("click", () => {
     closeSettings();
     el.helpModal.classList.remove("hidden");
+  });
+  el.btnIosInstallOk?.addEventListener("click", () => {
+    try { localStorage.setItem(IOS_INSTALL_ACK_KEY, "true"); } catch { }
+    el.iosInstallModal.classList.add("hidden");
   });
   el.btnPaletteReset?.addEventListener("click", resetPalette);
 
@@ -667,10 +707,95 @@ async function init() {
   el.board.addEventListener("pointerup", onPointerUp);
   el.board.addEventListener("pointercancel", onPointerUp);
 
-  const res = await fetch("levels_index.json");
-  state.packs = await res.json();
+  if (shouldShowIosInstallPrompt()) el.iosInstallModal.classList.remove("hidden");
+
+  try {
+    state.levelManifest = await fetchLevelManifest();
+  } catch (error) {
+    console.error(error);
+    showToast("離線資料尚未準備完成");
+    return;
+  }
+  state.packs = Object.fromEntries(
+    Object.entries(state.levelManifest.packs).map(([pack, entry]) => [pack, entry.count]),
+  );
   renderPackButtons();
+  syncLevelBundles(state.levelManifest);
   await applyRelayFromUrl();
+}
+
+async function fetchLevelManifest() {
+  const url = `${LEVEL_BUNDLE_BASE}manifest.json?refresh=${Date.now()}`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Level manifest request failed: ${res.status}`);
+  const manifest = await res.json();
+  validateLevelManifest(manifest);
+  return manifest;
+}
+
+function validateLevelManifest(manifest) {
+  if (!manifest || manifest.schemaVersion !== 1 || !manifest.packs || Array.isArray(manifest.packs)) {
+    throw new Error("Invalid level manifest");
+  }
+  const entries = Object.entries(manifest.packs);
+  if (entries.length === 0) throw new Error("Level manifest has no packs");
+  for (const [pack, entry] of entries) {
+    if (!/^[a-z0-9]+$/.test(pack)
+      || !entry || !Number.isInteger(entry.count) || entry.count < 1
+      || entry.file !== `${pack}.json`
+      || !/^[0-9a-f]{64}$/.test(entry.sha256)) {
+      throw new Error(`Invalid level manifest entry: ${pack}`);
+    }
+  }
+}
+
+function syncLevelBundles(manifest) {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.ready.then((registration) => {
+    registration.active?.postMessage({ type: "SYNC_LEVEL_BUNDLES", manifest });
+  }).catch((error) => console.error("Service worker unavailable", error));
+}
+
+async function clearOfflineCache() {
+  if (!confirm("清除離線快取？遊戲進度和設定會保留。")) return;
+  el.btnClearCache.disabled = true;
+  try {
+    if ("serviceWorker" in navigator) {
+      const registration = await navigator.serviceWorker.ready;
+      if (!registration.active) throw new Error("No active service worker");
+      await requestCacheClear(registration.active);
+    } else {
+      const names = await caches.keys();
+      await Promise.all(names.filter((name) => name.startsWith("meowdoku-")).map((name) => caches.delete(name)));
+    }
+    levelBundlePromises.clear();
+    if (navigator.onLine) location.reload();
+    else {
+      showToast("快取已清除，連線後請重新載入");
+      el.btnClearCache.disabled = false;
+    }
+  } catch (error) {
+    console.error(error);
+    showToast("清除快取失敗");
+    el.btnClearCache.disabled = false;
+  }
+}
+
+function requestCacheClear(worker) {
+  return new Promise((resolve, reject) => {
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => {
+      channel.port1.close();
+      reject(new Error("Cache clear timed out"));
+    }, 10000);
+    channel.port1.onmessage = (event) => {
+      clearTimeout(timer);
+      channel.port1.close();
+      if (event.data?.ok) resolve();
+      else reject(new Error(event.data?.error || "Cache clear failed"));
+    };
+    worker.postMessage({ type: "CLEAR_CACHES" }, [channel.port2]);
+  });
 }
 
 function renderPackButtons() {
@@ -716,9 +841,16 @@ function refreshDoneMarks() {
 }
 
 async function startLevel(pack, idx) {
-  const path = `levels/${pack}/level_${pack}_${String(idx).padStart(8, "0")}.txt`;
-  const res = await fetch(path);
-  const text = await res.text();
+  let text;
+  try {
+    const levels = await loadLevelBundle(pack);
+    text = levels[idx - 1];
+    if (typeof text !== "string") throw new Error(`Level not found: ${pack}:${idx}`);
+  } catch (error) {
+    console.error(error);
+    showToast(navigator.onLine ? "關卡資料載入失敗" : "離線資料尚未準備完成");
+    return;
+  }
   const { n, regions, solution } = parseLevel(text);
 
   state.pack = pack;
@@ -746,6 +878,38 @@ async function startLevel(pack, idx) {
   renderHearts();
   if (settings.showHelp)
     el.helpModal.classList.remove("hidden");
+}
+
+async function loadLevelBundle(pack) {
+  if (levelBundlePromises.has(pack)) return levelBundlePromises.get(pack);
+  const promise = (async () => {
+    const entry = state.levelManifest?.packs?.[pack];
+    if (!entry) throw new Error(`Unknown level pack: ${pack}`);
+    const url = `${LEVEL_BUNDLE_BASE}${entry.file}?v=${entry.sha256}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Level bundle request failed: ${pack} (${res.status})`);
+    const bytes = await res.arrayBuffer();
+    if (await sha256Hex(bytes) !== entry.sha256) throw new Error(`Level bundle hash mismatch: ${pack}`);
+    const bundle = JSON.parse(new TextDecoder().decode(bytes));
+    if (bundle.schemaVersion !== 1 || bundle.pack !== pack
+      || !Array.isArray(bundle.levels) || bundle.levels.length !== entry.count
+      || bundle.levels.some((level) => typeof level !== "string")) {
+      throw new Error(`Invalid level bundle: ${pack}`);
+    }
+    return bundle.levels;
+  })();
+  levelBundlePromises.set(pack, promise);
+  try {
+    return await promise;
+  } catch (error) {
+    levelBundlePromises.delete(pack);
+    throw error;
+  }
+}
+
+async function sha256Hex(bytes) {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 function parseLevel(text) {
